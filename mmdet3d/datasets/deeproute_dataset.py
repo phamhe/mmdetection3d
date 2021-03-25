@@ -43,7 +43,7 @@ class DeeprouteDataset(Custom3DDataset):
         test_mode (bool, optional): Whether the dataset is in test mode.
             Defaults to False.
         pcd_limit_range (list): The range of point cloud used to filter
-            invalid predicted boxes. Default: [0, -40, -3, 70.4, 40, 0.0].
+            invalid predicted boxes. Default: [-20, -40, -3, 70.4, 40, 0.0].
     """
     CLASSES = ('PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS')
 
@@ -58,7 +58,7 @@ class DeeprouteDataset(Custom3DDataset):
                  box_type_3d='LiDAR',
                  filter_empty_gt=True,
                  test_mode=False,
-                 pcd_limit_range=[0, -40, -3, 70.4, 40, 0.0]):
+                 pcd_limit_range=[-20.4, -40, -3, 70.4, 40, 0.0]):
         super().__init__(
             data_root=data_root,
             ann_file=ann_file,
@@ -148,8 +148,22 @@ class DeeprouteDataset(Custom3DDataset):
         gt_names = annos['name']
         gt_bboxes_3d = np.concatenate([loc, dims, rots[..., np.newaxis]],
                                       axis=1).astype(np.float32)
-        gt_bboxes_3d = LiDARInstance3DBoxes(gt_bboxes_3d)#.convert_to(self.box_mode_3d, np.identity(4))
+        gt_bboxes_3d = LiDARInstance3DBoxes(
+            gt_bboxes_3d,
+            box_dim=gt_bboxes_3d.shape[-1],
+            origin=(0.5, 0.5, 0.5))
 
+        # debug code
+        # example = self.prepare_test_data(index)
+        # data_info = self.data_infos[index]
+        # pts_path = data_info['point_cloud']['velodyne_path']
+        # file_name = osp.split(pts_path)[-1].split('.')[0]
+        # points = example['points'][0]._data.numpy()
+        # show_result(points, 
+        #             gt_bboxes_3d.tensor.numpy(), 
+        #             gt_bboxes_3d.tensor.numpy(), 
+        #             'model_0324_deeproute_pp', file_name, True)
+        # exit()
 
         selected = self.drop_arrays_by_name(gt_names, ['DontCare'])
         gt_names = gt_names[selected]
@@ -304,6 +318,8 @@ class DeeprouteDataset(Custom3DDataset):
 
         if tmp_dir is not None:
             tmp_dir.cleanup()
+        # show=True
+        # out_dir = 'model_0324_deeproute_pp'
         if show:
             self.show(results, out_dir)
         return ap_dict

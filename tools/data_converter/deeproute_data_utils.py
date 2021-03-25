@@ -99,8 +99,7 @@ def get_label_anno(label_path):
     annotations['name'] = np.array(name)
     annotations['truncated'] = np.array(truncated)
     annotations['occluded'] = np.array(occluded)
-    # dimensions will convert hwl format to standard lhw(camera) format.
-    annotations['dimensions'] = np.array(dimensions).reshape(-1, 3)[:, [2, 0, 1]]
+    annotations['dimensions'] = np.array(dimensions).reshape(-1, 3)
     annotations['location'] = np.array(location).reshape(-1, 3)
     annotations['rotation_y'] = np.array(rotation_y).reshape(-1)
     annotations['score'] = np.zeros((annotations['name'].shape[0], ))
