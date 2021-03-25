@@ -4,7 +4,7 @@ _base_ = [
     '../_base_/schedules/cyclic_40e.py', '../_base_/default_runtime.py'
 ]
 
-point_cloud_range = [-19.12, -39.68, -3, 69.12, 39.68, 1]
+point_cloud_range = [-29.12, -39.68, -3, 69.12, 39.68, 1]
 # dataset settings
 data_root = 'data/deeproute/'
 class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']
