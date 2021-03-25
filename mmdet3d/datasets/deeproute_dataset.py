@@ -154,16 +154,16 @@ class DeeprouteDataset(Custom3DDataset):
             origin=(0.5, 0.5, 0.5))
 
         # debug code
-        example = self.prepare_test_data(index)
-        data_info = self.data_infos[index]
-        pts_path = data_info['point_cloud']['velodyne_path']
-        file_name = osp.split(pts_path)[-1].split('.')[0]
-        points = example['points'][0]._data.numpy()
-        show_result(points, 
-                    gt_bboxes_3d.tensor.numpy(), 
-                    gt_bboxes_3d.tensor.numpy(), 
-                    'model_0324_deeproute_pp', file_name, True)
-        exit()
+        # example = self.prepare_test_data(index)
+        # data_info = self.data_infos[index]
+        # pts_path = data_info['point_cloud']['velodyne_path']
+        # file_name = osp.split(pts_path)[-1].split('.')[0]
+        # points = example['points'][0]._data.numpy()
+        # show_result(points, 
+        #             gt_bboxes_3d.tensor.numpy(), 
+        #             gt_bboxes_3d.tensor.numpy(), 
+        #             'model_0324_deeproute_pp', file_name, True)
+        # exit()
 
         selected = self.drop_arrays_by_name(gt_names, ['DontCare'])
         gt_names = gt_names[selected]
@@ -318,8 +318,8 @@ class DeeprouteDataset(Custom3DDataset):
 
         if tmp_dir is not None:
             tmp_dir.cleanup()
-        show=True
-        out_dir = 'model_0324_deeproute_pp'
+        # show=True
+        # out_dir = 'model_0324_deeproute_pp'
         if show:
             self.show(results, out_dir)
         return ap_dict
