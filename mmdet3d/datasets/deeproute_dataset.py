@@ -278,14 +278,14 @@ class DeeprouteDataset(Custom3DDataset):
             dict[str, float]: Results of each evaluation metric.
         """
         result_files, tmp_dir = self.format_results(results, pklfile_prefix)
-        from mmdet3d.core.evaluation import kitti_eval
+        from mmdet3d.core.evaluation import deeproute_eval
         gt_annos = [info['annos'] for info in self.data_infos]
 
         if isinstance(result_files, dict):
             ap_dict = dict()
             for name, result_files_ in result_files.items():
                 eval_types = ['bev', '3d']
-                ap_result_str, ap_dict_ = kitti_eval(
+                ap_result_str, ap_dict_ = deeproute_eval(
                     gt_annos,
                     result_files_,
                     self.CLASSES,
@@ -297,8 +297,9 @@ class DeeprouteDataset(Custom3DDataset):
                     f'Results of {name}:\n' + ap_result_str, logger=logger)
 
         else:
-            ap_result_str, ap_dict = kitti_eval(gt_annos, result_files,
-                                                self.CLASSES)
+            eval_types = ['bev', '3d']
+            ap_result_str, ap_dict = deeproute_eval(gt_annos, result_files,
+                                                self.CLASSES, eval_types = ['bev', '3d'])
             print_log('\n' + ap_result_str, logger=logger)
 
         if tmp_dir is not None:
@@ -331,13 +332,12 @@ class DeeprouteDataset(Custom3DDataset):
             mmcv.mkdir_or_exist(submission_prefix)
 
         det_annos = []
-        print('\nConverting prediction to KITTI format')
+        print('\nConverting prediction to Deeproute format')
         for idx, pred_dicts in enumerate(
                 mmcv.track_iter_progress(net_outputs)):
             annos = []
             info = self.data_infos[idx]
             sample_idx = info['image']['image_idx']
-            image_shape = info['image']['image_shape'][:2]
             box_dict = self.convert_valid_bboxes(pred_dicts, info)
             anno = {
                 'name': [],
@@ -348,7 +348,7 @@ class DeeprouteDataset(Custom3DDataset):
                 'rotation_y': [],
                 'score': []
             }
-            if len(box_dict['bbox3d_lidar']) > 0:
+            if len(box_dict['box3d_lidar']) > 0:
                 box_preds = box_dict['box3d_lidar']
                 scores = box_dict['scores']
                 label_preds = box_dict['label_preds']
@@ -448,7 +448,7 @@ class DeeprouteDataset(Custom3DDataset):
         limit_range = box_preds.tensor.new_tensor(self.pcd_limit_range)
         valid_pcd_inds = ((box_preds.center > limit_range[:3]) &
                           (box_preds.center < limit_range[3:]))
-        valid_inds = valid_cam_inds & valid_pcd_inds.all(-1)
+        valid_inds = valid_pcd_inds.all(-1)
 
         if valid_inds.sum() > 0:
             return dict(
