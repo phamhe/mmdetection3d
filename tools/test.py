@@ -207,6 +207,7 @@ def main():
             ]:
                 eval_kwargs.pop(key, None)
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
+            eval_kwargs.update(dict(show=args.show, out_dir=args.show_dir))
             print(dataset.evaluate(outputs, **eval_kwargs))
 
 

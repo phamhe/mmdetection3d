@@ -84,9 +84,9 @@ def show_result(points, gt_bboxes, pred_bboxes, out_dir, filename, show=True):
     if show:
         vis = Visualizer(points)
         if pred_bboxes is not None:
-            vis.add_bboxes(bbox3d=pred_bboxes)
+            vis.add_bboxes(bbox3d=pred_bboxes, bbox_color=(0, 0, 1))
         if gt_bboxes is not None:
-            vis.add_bboxes(bbox3d=gt_bboxes, bbox_color=(0, 0, 1))
+            vis.add_bboxes(bbox3d=gt_bboxes, bbox_color=(0, 1, 0))
         vis.show()
 
     result_path = osp.join(out_dir, filename)

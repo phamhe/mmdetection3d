@@ -62,7 +62,8 @@ def get_label_anno(label_path):
         'occluded': [],
         'dimensions': [],
         'location': [],
-        'rotation_y': []
+        'rotation_y': [],
+        'hard_type':[]
     })
     with open(label_path, 'r') as f:
         objs = json.load(f)
@@ -73,6 +74,7 @@ def get_label_anno(label_path):
     dimensions = []
     location = []
     rotation_y = []
+    hard_type = []
     num_objects = 0
     for obj in objs:
         if obj['type'] != 'DontCare':
@@ -86,6 +88,10 @@ def get_label_anno(label_path):
         if 'occluded' in obj:
             occ = obj['occluded']
         occluded.append(occ)
+        ht = 'easy'
+        if 'hard_type' in obj:
+            ht = obj['hard_type']
+        hard_type.append(ht)
 
         dimensions.append([obj['bounding_box']['length'],
                             obj['bounding_box']['width'],
@@ -99,6 +105,7 @@ def get_label_anno(label_path):
     annotations['name'] = np.array(name)
     annotations['truncated'] = np.array(truncated)
     annotations['occluded'] = np.array(occluded)
+    annotations['hard_type'] = np.array(hard_type)
     annotations['dimensions'] = np.array(dimensions).reshape(-1, 3)
     annotations['location'] = np.array(location).reshape(-1, 3)
     annotations['rotation_y'] = np.array(rotation_y).reshape(-1)
@@ -211,25 +218,26 @@ def add_difficulty_to_annos(info):
     # height = bbox[:, 3] - bbox[:, 1]
     occlusion = annos['occluded']
     truncation = annos['truncated']
+    hard_type = annos['hard_type']
     diff = []
     easy_mask = np.ones((len(dims), ), dtype=np.bool)
     moderate_mask = np.ones((len(dims), ), dtype=np.bool)
     hard_mask = np.ones((len(dims), ), dtype=np.bool)
     i = 0
     #for h, o, t in zip(height, occlusion, truncation):
-    for o, t in zip(occlusion, truncation):
-        # if o > max_occlusion[0] or h <= min_height[0] or t > max_trunc[0]:
+    for o, t , h in zip(occlusion, truncation, hard_type):
+        # if o > max_occlusion[0] or t > max_trunc[0]:
         #     easy_mask[i] = False
-        # if o > max_occlusion[1] or h <= min_height[1] or t > max_trunc[1]:
+        # if o > max_occlusion[1] or t > max_trunc[1]:
         #     moderate_mask[i] = False
-        # if o > max_occlusion[2] or h <= min_height[2] or t > max_trunc[2]:
+        # if o > max_occlusion[2] or t > max_trunc[2]:
         #     hard_mask[i] = False
-        if o > max_occlusion[0] or t > max_trunc[0]:
-            easy_mask[i] = False
-        if o > max_occlusion[1] or t > max_trunc[1]:
+        if h == 'easy':
             moderate_mask[i] = False
-        if o > max_occlusion[2] or t > max_trunc[2]:
             hard_mask[i] = False
+        elif h == 'hard':
+            easy_mask[i] = False
+            moderate_mask[i] = False
         i += 1
     is_easy = easy_mask
     is_moderate = np.logical_xor(easy_mask, moderate_mask)
