@@ -6,6 +6,9 @@ from mmdet3d.core.points import BasePoints
 from mmdet.datasets.builder import PIPELINES
 from mmdet.datasets.pipelines import to_tensor
 
+from mmdet3d.core import show_result
+import os
+
 PIPELINES._module_dict.pop('DefaultFormatBundle')
 
 
@@ -142,6 +145,23 @@ class Collect3D(object):
         self.keys = keys
         self.meta_keys = meta_keys
 
+    def show_results(self, result, out_dir):
+        """Results visualization.
+
+        Args:
+            data (list[dict]): Input points and the information of the sample.
+            result (list[dict]): Prediction results.
+            out_dir (str): Output directory of visualization result.
+        """
+        points = result['points']._data.numpy()
+        pts_filename = result['pts_filename']
+        file_name = os.path.split(pts_filename)[-1].split('.')[0]
+
+        assert out_dir is not None, 'Expect out_dir, got none.'
+
+        gt_bboxes = result['gt_bboxes_3d']._data.tensor.cpu().numpy()
+        show_result(points, gt_bboxes, None, out_dir, file_name)
+
     def __call__(self, results):
         """Call function to collect keys in results. The keys in ``meta_keys``
         will be converted to :obj:`mmcv.DataContainer`.
@@ -161,6 +181,12 @@ class Collect3D(object):
                 img_metas[key] = results[key]
 
         data['img_metas'] = DC(img_metas, cpu_only=True)
+
+        # visual debug
+        # self.show_results(results, 'debug')
+        # exit()
+
+
         for key in self.keys:
             data[key] = results[key]
         return data

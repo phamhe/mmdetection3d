@@ -9,6 +9,29 @@ from mmdet.datasets.pipelines import RandomFlip
 from ..registry import OBJECTSAMPLERS
 from .data_augment_utils import noise_per_object_v3_
 
+from mmdet3d.core import show_result
+import os
+
+def show_results(result, out_dir):
+    """Results visualization.
+
+    Args:
+        data (list[dict]): Input points and the information of the sample.
+        result (list[dict]): Prediction results.
+        out_dir (str): Output directory of visualization result.
+    """
+    points = result['points'].tensor.cpu().numpy()
+    # pts_filename = result['pts_filename']
+    # file_name = os.path.split(pts_filename)[-1].split('.')[0]
+    file_name = '01410'
+
+    assert out_dir is not None, 'Expect out_dir, got none.'
+
+    if not isinstance(result['gt_bboxes_3d'], np.ndarray):
+        gt_bboxes = result['gt_bboxes_3d'].tensor.cpu().numpy()
+    else:
+        gt_bboxes = result['gt_bboxes_3d']
+    show_result(points, gt_bboxes, None, out_dir, file_name)
 
 @PIPELINES.register_module()
 class RandomFlip3D(RandomFlip):
@@ -82,6 +105,9 @@ class RandomFlip3D(RandomFlip):
         """
         # filp 2D image and its annotations
         super(RandomFlip3D, self).__call__(input_dict)
+        # visul debug
+        # show_results(input_dict, 'debug')
+        # exit()
 
         if self.sync_2d:
             input_dict['pcd_horizontal_flip'] = input_dict['flip']
@@ -100,6 +126,9 @@ class RandomFlip3D(RandomFlip):
             self.random_flip_data_3d(input_dict, 'horizontal')
         if input_dict['pcd_vertical_flip']:
             self.random_flip_data_3d(input_dict, 'vertical')
+        # visul debug
+        # show_results(input_dict, 'debug')
+        # exit()
         return input_dict
 
     def __repr__(self):
@@ -144,6 +173,7 @@ class ObjectSample(object):
         points = points[np.logical_not(masks.any(-1))]
         return points
 
+
     def __call__(self, input_dict):
         """Call function to sample ground truth objects to the data.
 
@@ -155,6 +185,10 @@ class ObjectSample(object):
                 'points', 'gt_bboxes_3d', 'gt_labels_3d' keys are updated \
                 in the result dict.
         """
+
+        # visul debug
+        # show_results(input_dict, 'debug')
+
         gt_bboxes_3d = input_dict['gt_bboxes_3d']
         gt_labels_3d = input_dict['gt_labels_3d']
 
@@ -172,6 +206,10 @@ class ObjectSample(object):
         else:
             sampled_dict = self.db_sampler.sample_all(
                 gt_bboxes_3d.tensor.numpy(), gt_labels_3d, img=None)
+
+        # visul debug
+        # show_results(sampled_dict, 'debug')
+        # show_result(points.tensor.numpy(), gt_bboxes_3d.tensor.numpy(), None, 'debug', '01140')
 
         if sampled_dict is not None:
             sampled_gt_bboxes_3d = sampled_dict['gt_bboxes_3d']
@@ -251,6 +289,10 @@ class ObjectNoise(object):
             dict: Results after adding noise to each object, \
                 'points', 'gt_bboxes_3d' keys are updated in the result dict.
         """
+
+        # visul debug
+        # show_results(input_dict, 'debug')
+
         gt_bboxes_3d = input_dict['gt_bboxes_3d']
         points = input_dict['points']
 
@@ -268,6 +310,9 @@ class ObjectNoise(object):
 
         input_dict['gt_bboxes_3d'] = gt_bboxes_3d.new_box(numpy_box)
         input_dict['points'] = points.new_point(numpy_points)
+        # visul debug
+        # show_results(input_dict, 'debug')
+        # exit()
         return input_dict
 
     def __repr__(self):
@@ -405,6 +450,8 @@ class GlobalRotScaleTrans(object):
                 'pcd_scale_factor', 'pcd_trans' and keys in \
                 input_dict['bbox3d_fields'] are updated in the result dict.
         """
+        # visul debug
+        # show_results(input_dict, 'debug')
         self._rot_bbox_points(input_dict)
 
         if 'pcd_scale_factor' not in input_dict:
@@ -412,6 +459,8 @@ class GlobalRotScaleTrans(object):
         self._scale_bbox_points(input_dict)
 
         self._trans_bbox_points(input_dict)
+        # visul debug
+        # show_results(input_dict, 'debug')
         return input_dict
 
     def __repr__(self):

@@ -89,24 +89,24 @@ def show_result(points, gt_bboxes, pred_bboxes, out_dir, filename, show=True):
             vis.add_bboxes(bbox3d=gt_bboxes, bbox_color=(0, 1, 0))
         vis.show()
 
-    result_path = osp.join(out_dir, filename)
-    mmcv.mkdir_or_exist(result_path)
+    # result_path = osp.join(out_dir, filename)
+    # mmcv.mkdir_or_exist(result_path)
 
-    if points is not None:
-        _write_ply(points, osp.join(result_path, f'{filename}_points.obj'))
+    # if points is not None:
+    #     _write_ply(points, osp.join(result_path, f'{filename}_points.obj'))
 
-    if gt_bboxes is not None:
-        # bottom center to gravity center
-        gt_bboxes[..., 2] += gt_bboxes[..., 5] / 2
-        # the positive direction for yaw in meshlab is clockwise
-        gt_bboxes[:, 6] *= -1
-        _write_oriented_bbox(gt_bboxes,
-                             osp.join(result_path, f'{filename}_gt.ply'))
+    # if gt_bboxes is not None:
+    #     # bottom center to gravity center
+    #     gt_bboxes[..., 2] += gt_bboxes[..., 5] / 2
+    #     # the positive direction for yaw in meshlab is clockwise
+    #     gt_bboxes[:, 6] *= -1
+    #     _write_oriented_bbox(gt_bboxes,
+    #                          osp.join(result_path, f'{filename}_gt.ply'))
 
-    if pred_bboxes is not None:
-        # bottom center to gravity center
-        pred_bboxes[..., 2] += pred_bboxes[..., 5] / 2
-        # the positive direction for yaw in meshlab is clockwise
-        pred_bboxes[:, 6] *= -1
-        _write_oriented_bbox(pred_bboxes,
-                             osp.join(result_path, f'{filename}_pred.ply'))
+    # if pred_bboxes is not None:
+    #     # bottom center to gravity center
+    #     pred_bboxes[..., 2] += pred_bboxes[..., 5] / 2
+    #     # the positive direction for yaw in meshlab is clockwise
+    #     pred_bboxes[:, 6] *= -1
+    #     _write_oriented_bbox(pred_bboxes,
+    #                          osp.join(result_path, f'{filename}_pred.ply'))

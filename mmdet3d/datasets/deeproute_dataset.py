@@ -150,8 +150,7 @@ class DeeprouteDataset(Custom3DDataset):
                                       axis=1).astype(np.float32)
         gt_bboxes_3d = LiDARInstance3DBoxes(
             gt_bboxes_3d,
-            box_dim=gt_bboxes_3d.shape[-1],
-            origin=(0.5, 0.5, 0.5))
+            box_dim=gt_bboxes_3d.shape[-1])
 
         # debug code
         # example = self.prepare_test_data(index)
