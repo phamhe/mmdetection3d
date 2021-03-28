@@ -12,6 +12,9 @@ from mmdet.models import HEADS
 from ..builder import build_loss
 from .train_mixins import AnchorTrainMixin
 
+from mmdet3d.core import show_result
+import os
+
 
 @HEADS.register_module()
 class Anchor3DHead(nn.Module, AnchorTrainMixin):
@@ -232,6 +235,13 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         pos_bbox_pred = bbox_pred[pos_inds]
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
+
+        # visual debug
+        # points = np.zeros((1, 3))
+        # gt_bboxes = pos_bbox_targets.cpu().detach().numpy() # gt delta
+        # dt_bboxes = pos_bbox_pred.cpu().detach().numpy() # dt delta
+        # show_result(points, gt_bboxes, dt_bboxes, '', '01410')
+        # exit()
 
         # dir loss
         if self.use_direction_classifier:

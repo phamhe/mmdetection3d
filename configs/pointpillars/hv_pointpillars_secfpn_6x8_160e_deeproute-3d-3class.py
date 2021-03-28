@@ -15,9 +15,9 @@ db_sampler = dict(
     rate=1.0,
     prepare=dict(
         filter_by_difficulty=[-1],
-        filter_by_min_points=dict(CAR=5, PEDESTRIAN=10, CYCLIST=10)),
+        filter_by_min_points=dict(CAR=5, PEDESTRIAN=10, CYCLIST=10, TRUCK=5, BUS=5)),
     classes=class_names,
-    sample_groups=dict(CAR=15, PEDESTRIAN=10, CYCLIST=10))
+    sample_groups=dict(CAR=15, PEDESTRIAN=10, CYCLIST=10, TRUCK=5, BUS=5))
 
 # PointPillars uses different augmentation hyper parameters
 train_pipeline = [
