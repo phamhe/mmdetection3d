@@ -118,6 +118,7 @@ work_dirs/
 exps/
 *~
 debug*/
+*.swp
 
 # Pytorch
 *.pth
