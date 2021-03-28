@@ -190,7 +190,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
 
     def loss_single(self, cls_score, bbox_pred, dir_cls_preds, labels,
                     label_weights, bbox_targets, bbox_weights, dir_targets,
-                    dir_weights, num_total_samples):
+                    dir_weights, anchor_list, num_total_samples):
         """Calculate loss of Single-level results.
 
         Args:
@@ -224,6 +224,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         bbox_pred = bbox_pred.permute(0, 2, 3,
                                       1).reshape(-1, self.box_code_size)
         bbox_targets = bbox_targets.reshape(-1, self.box_code_size)
+        anchor_list = anchor_list.reshape(-1, self.box_code_size)
         bbox_weights = bbox_weights.reshape(-1, self.box_code_size)
 
         bg_class_ind = self.num_classes
@@ -235,13 +236,15 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         pos_bbox_pred = bbox_pred[pos_inds]
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
+        pos_bbox_anchors = anchor_list[pos_inds]
 
         # visual debug
         # points = np.zeros((1, 3))
-        # gt_bboxes = pos_bbox_targets.cpu().detach().numpy() # gt delta
-        # dt_bboxes = pos_bbox_pred.cpu().detach().numpy() # dt delta
+        # gt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_targets)
+        # dt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_pred)
+        # gt_bboxes = gt_bboxes.cpu().detach().numpy() # gt delta
+        # dt_bboxes = dt_bboxes.cpu().detach().numpy() # dt delta
         # show_result(points, gt_bboxes, dt_bboxes, '', '01410')
-        # exit()
 
         # dir loss
         if self.use_direction_classifier:
@@ -360,6 +363,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
          num_total_neg) = cls_reg_targets
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
+        anchor_list = [_.reshape(1, -1, self.box_code_size) for _ in anchor_list]
 
         # num_total_samples = None
         losses_cls, losses_bbox, losses_dir = multi_apply(
@@ -373,6 +377,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
             bbox_weights_list,
             dir_targets_list,
             dir_weights_list,
+            anchor_list,
             num_total_samples=num_total_samples)
         return dict(
             loss_cls=losses_cls, loss_bbox=losses_bbox, loss_dir=losses_dir)
@@ -495,6 +500,11 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
             mlvl_dir_scores.append(dir_cls_score)
 
         mlvl_bboxes = torch.cat(mlvl_bboxes)
+        # visual debug
+        # points = np.zeros((1, 3))
+        # dt_bboxes = mlvl_bboxes.cpu().detach().numpy() # dt delta
+        # show_result(points, None, dt_bboxes, '', '01410')
+        # exit()
         mlvl_bboxes_for_nms = xywhr2xyxyr(input_meta['box_type_3d'](
             mlvl_bboxes, box_dim=self.box_code_size).bev)
         mlvl_scores = torch.cat(mlvl_scores)
@@ -517,4 +527,10 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
                 dir_rot + self.dir_offset +
                 np.pi * dir_scores.to(bboxes.dtype))
         bboxes = input_meta['box_type_3d'](bboxes, box_dim=self.box_code_size)
+
+        # points = np.zeros((1, 3))
+        # dt_bboxes = bboxes.tensor.cpu().detach().numpy() # dt delta
+        # show_result(points, None, dt_bboxes, '', '01410')
+        # exit()
+
         return bboxes, scores, labels
