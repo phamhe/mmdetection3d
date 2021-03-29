@@ -236,20 +236,20 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
         # visual debug
-        # if anchor_list is not None:
-        #     anchor_list = anchor_list.reshape(-1, self.box_code_size)
-        #     pos_bbox_anchors = anchor_list[pos_inds]
-        #     pos_cls_predicts = cls_score[pos_inds].cpu().detach().numpy()
-        #     gt_cls_labels = labels[pos_inds].cpu().detach().numpy()
+        if anchor_list is not None:
+            anchor_list = anchor_list.reshape(-1, self.box_code_size)
+            pos_bbox_anchors = anchor_list[pos_inds]
+            pos_cls_predicts = cls_score[pos_inds].cpu().detach().numpy()
+            gt_cls_labels = labels[pos_inds].cpu().detach().numpy()
 
-        #     points = np.zeros((1, 3))
-        #     gt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_targets)
-        #     dt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_pred)
-        #     gt_bboxes = gt_bboxes.cpu().detach().numpy() # gt delta
-        #     dt_bboxes = dt_bboxes.cpu().detach().numpy() # dt delta
-        #     show_result(points, gt_bboxes, dt_bboxes, '', '01410')
-        #     # show_result_bev(None, gt_bboxes, dt_bboxes, 
-        #     #                 gt_cls_labels, pos_cls_predicts)
+            points = np.zeros((1, 3))
+            gt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_targets)
+            dt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_pred)
+            gt_bboxes = gt_bboxes.cpu().detach().numpy() # gt delta
+            dt_bboxes = dt_bboxes.cpu().detach().numpy() # dt delta
+            show_result(points, gt_bboxes, dt_bboxes, '', '01410')
+            # show_result_bev(None, gt_bboxes, dt_bboxes, 
+            #                 gt_cls_labels, pos_cls_predicts)
 
 
 
@@ -370,12 +370,12 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
          num_total_neg) = cls_reg_targets
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
-        # anchor_list = [_.reshape(1, -1, self.box_code_size) for _ in anchor_list]
-        # anchors = anchor_list[0]
-        # for anchor in anchor_list[1:]:
-        #     anchors = np.concatenate((anchors, anchor))
+        anchor_list = [_.reshape(1, -1, self.box_code_size) for _ in anchor_list]
+        anchors = anchor_list[0]
+        for anchor in anchor_list[1:]:
+            anchors = np.concatenate((anchors, anchor))
 
-        num_total_samples = None
+        # num_total_samples = None
         losses_cls, losses_bbox, losses_dir = multi_apply(
             self.loss_single,
             cls_scores,
