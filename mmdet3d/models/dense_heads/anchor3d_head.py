@@ -370,10 +370,10 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
          num_total_neg) = cls_reg_targets
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
-        anchor_list = [_.reshape(1, -1, self.box_code_size) for _ in anchor_list]
-        anchors = anchor_list[0]
-        for anchor in anchor_list[1:]:
-            anchors = np.concatenate((anchors, anchor))
+        # anchor_list = [_.reshape(1, -1, self.box_code_size) for _ in anchor_list]
+        # anchors = anchor_list[0]
+        # for anchor in anchor_list[1:]:
+        #     anchors = np.concatenate((anchors, anchor))
 
         # num_total_samples = None
         losses_cls, losses_bbox, losses_dir = multi_apply(
