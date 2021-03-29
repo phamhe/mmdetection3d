@@ -190,7 +190,8 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
 
     def loss_single(self, cls_score, bbox_pred, dir_cls_preds, labels,
                     label_weights, bbox_targets, bbox_weights, dir_targets,
-                    dir_weights, anchor_list, num_total_samples):
+                    # dir_weights, anchor_list, num_total_samples):
+                    dir_weights, num_total_samples):
         """Calculate loss of Single-level results.
 
         Args:
@@ -224,7 +225,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         bbox_pred = bbox_pred.permute(0, 2, 3,
                                       1).reshape(-1, self.box_code_size)
         bbox_targets = bbox_targets.reshape(-1, self.box_code_size)
-        anchor_list = anchor_list.reshape(-1, self.box_code_size)
+        # anchor_list = anchor_list.reshape(-1, self.box_code_size)
         bbox_weights = bbox_weights.reshape(-1, self.box_code_size)
 
         bg_class_ind = self.num_classes
@@ -236,7 +237,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         pos_bbox_pred = bbox_pred[pos_inds]
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
-        pos_bbox_anchors = anchor_list[pos_inds]
+        # pos_bbox_anchors = anchor_list[pos_inds]
 
         # visual debug
         # points = np.zeros((1, 3))
@@ -363,7 +364,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
          num_total_neg) = cls_reg_targets
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
-        anchor_list = [_.reshape(1, -1, self.box_code_size) for _ in anchor_list]
+        # anchor_list = [_.reshape(1, -1, self.box_code_size) for _ in anchor_list]
 
         # num_total_samples = None
         losses_cls, losses_bbox, losses_dir = multi_apply(
@@ -377,7 +378,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
             bbox_weights_list,
             dir_targets_list,
             dir_weights_list,
-            anchor_list,
+            # anchor_list,
             num_total_samples=num_total_samples)
         return dict(
             loss_cls=losses_cls, loss_bbox=losses_bbox, loss_dir=losses_dir)
