@@ -375,7 +375,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         # for anchor in anchor_list[1:]:
         #     anchors = np.concatenate((anchors, anchor))
 
-        # num_total_samples = None
+        num_total_samples = None
         losses_cls, losses_bbox, losses_dir = multi_apply(
             self.loss_single,
             cls_scores,
