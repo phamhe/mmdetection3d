@@ -179,6 +179,22 @@ def show_pts_boxes(points,
 
     vis.destroy_window()
 
+def get_corners(center, size, yaw):
+    rot = np.asmatrix([[math.cos(yaw), -math.sin(yaw)],\
+                    [math.sin(yaw),  math.cos(yaw)]])
+    plain_pts = np.asmatrix([[0.5 * size[0], 0.5*size[1]],\
+                        [0.5 * size[0], -0.5*size[1]],\
+                        [-0.5 * size[0], -0.5*size[1]],\
+                        [-0.5 * size[0], 0.5*size[1]]])
+    tran_pts = np.asarray(rot * plain_pts.transpose());
+    tran_pts = tran_pts.transpose()
+    corners = np.arange(24).astype(np.float32).reshape(8, 3)
+    for i in range(8):
+        corners[i][0] = center[0] + tran_pts[i%4][0]
+        corners[i][1] = center[1] + tran_pts[i%4][1]
+        corners[i][2] = center[2] + (float(i >= 4) - 0.5) * size[2];
+    return corners
+
 
 def _draw_bboxes_ind(bbox3d,
                      vis,
@@ -237,6 +253,7 @@ def _draw_bboxes_ind(bbox3d,
 
         line_set = geometry.LineSet.create_from_oriented_bounding_box(box3d)
         line_set.paint_uniform_color(bbox_color)
+
         # draw bboxes on visualizer
         vis.add_geometry(line_set)
 

@@ -236,20 +236,20 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
         # visual debug
-        if anchor_list is not None:
-            anchor_list = anchor_list.reshape(-1, self.box_code_size)
-            pos_bbox_anchors = anchor_list[pos_inds]
-            pos_cls_predicts = cls_score[pos_inds].cpu().detach().numpy()
-            gt_cls_labels = labels[pos_inds].cpu().detach().numpy()
+        # if anchor_list is not None:
+        #     anchor_list = anchor_list.reshape(-1, self.box_code_size)
+        #     pos_bbox_anchors = anchor_list[pos_inds]
+        #     pos_cls_predicts = cls_score[pos_inds].cpu().detach().numpy()
+        #     gt_cls_labels = labels[pos_inds].cpu().detach().numpy()
 
-            points = np.zeros((1, 3))
-            gt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_targets)
-            dt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_pred)
-            gt_bboxes = gt_bboxes.cpu().detach().numpy() # gt delta
-            dt_bboxes = dt_bboxes.cpu().detach().numpy() # dt delta
-            show_result(points, gt_bboxes, dt_bboxes, '', '01410')
-            # show_result_bev(None, gt_bboxes, dt_bboxes, 
-            #                 gt_cls_labels, pos_cls_predicts)
+        #     points = np.zeros((1, 3))
+        #     gt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_targets)
+        #     dt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_pred)
+        #     gt_bboxes = gt_bboxes.cpu().detach().numpy() # gt delta
+        #     dt_bboxes = dt_bboxes.cpu().detach().numpy() # dt delta
+        #     show_result(points, gt_bboxes, dt_bboxes, '', '01410')
+        #     show_result_bev(None, gt_bboxes, dt_bboxes, 
+        #                     gt_cls_labels, pos_cls_predicts)
 
 
 
@@ -499,6 +499,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
                 else:
                     max_scores, _ = scores[:, :-1].max(dim=1)
                 _, topk_inds = max_scores.topk(nms_pre)
+
                 anchors = anchors[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
@@ -526,6 +527,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
             mlvl_scores = torch.cat([mlvl_scores, padding], dim=1)
 
         score_thr = cfg.get('score_thr', 0)
+
         results = box3d_multiclass_nms(mlvl_bboxes, mlvl_bboxes_for_nms,
                                        mlvl_scores, score_thr, cfg.max_num,
                                        cfg, mlvl_dir_scores)
@@ -537,10 +539,5 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
                 dir_rot + self.dir_offset +
                 np.pi * dir_scores.to(bboxes.dtype))
         bboxes = input_meta['box_type_3d'](bboxes, box_dim=self.box_code_size)
-
-        # points = np.zeros((1, 3))
-        # dt_bboxes = bboxes.tensor.cpu().detach().numpy() # dt delta
-        # show_result(points, None, dt_bboxes, '', '01410')
-        # exit()
 
         return bboxes, scores, labels
