@@ -184,6 +184,8 @@ class Collect3D(object):
 
         # visual debug
         # print(results['gt_bboxes_3d']._data.tensor.cpu().numpy().shape)
+        # print(results['gt_labels_3d']._data.cpu().numpy().shape)
+        # print(np.unique(results['gt_labels_3d']._data.cpu().numpy()))
         # print(results['gt_bboxes_3d']._data.tensor.cpu().numpy()[0])
         # self.show_results(results, 'debug')
         # exit()

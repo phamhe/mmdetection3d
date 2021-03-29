@@ -4,7 +4,7 @@ _base_ = [
     '../_base_/schedules/cyclic_40e.py', '../_base_/default_runtime.py'
 ]
 
-point_cloud_range = [-29.12, -39.68, -3, 69.12, 39.68, 1]
+point_cloud_range = [-29.12, -39.68, -3, 69.12, 39.68, 3]
 # dataset settings
 data_root = 'data/deeproute/'
 class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']
@@ -85,6 +85,7 @@ evaluation = dict(interval=10)
 # PointPillars usually need longer schedule than second, we simply double
 # the training schedule. Do remind that since we use RepeatDataset and
 # repeat factor is 2, so we actually train 160 epochs.
+checkpoint_config = dict(interval=10)
 log_config = dict(
     interval=1,
     hooks=[

@@ -110,3 +110,11 @@ def show_result(points, gt_bboxes, pred_bboxes, out_dir, filename, show=True):
     #     pred_bboxes[:, 6] *= -1
     #     _write_oriented_bbox(pred_bboxes,
     #                          osp.join(result_path, f'{filename}_pred.ply'))
+
+def show_result_bev(points, gt_bboxes, dt_bboxes, gt_labels=None, dt_labels=None, show=True):
+    from .open3d_vis import Visualizer_bev
+    if show:
+        vis = Visualizer_bev(points, gt_bboxes, dt_bboxes,
+                            gt_labels, dt_labels)
+        vis.show()
+        

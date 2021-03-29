@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
+import cv2
+import math
 
 try:
     import open3d as o3d
@@ -508,3 +510,70 @@ class Visualizer(object):
 
         self.o3d_visualizer.destroy_window()
         return
+
+class Visualizer_bev(object):
+    def __init__(self, 
+                point,
+                gt_bboxes, dt_bboxes,
+                gt_labels=None, dt_labels=None):
+        super(Visualizer_bev, self).__init__()
+        self.gt = gt_bboxes
+        self.dt = dt_bboxes
+        self.frame_size = []
+        self.frame_size.append(2*int(max(self.gt[:, 0].max(), self.dt[:, 1].max())) + 40)
+        self.frame_size.append(2*int(max(self.gt[:, 1].max(), self.dt[:, 0].max())) + 40)
+        self.frame_size[0] *= 10
+        self.frame_size[1] *= 10
+        self.canvas = np.zeros((self.frame_size[0], self.frame_size[1], 3), dtype='uint8')
+        self.canvas.fill(255)
+
+        self.gt_labels = np.ones((gt_labels.shape[0], 2))
+        self.gt_labels[:, 0] = gt_labels[:]
+        self.dt_labels = np.zeros((dt_labels.shape[0], 2))
+        for i, dt in enumerate(self.dt_labels):
+            # softmax
+            dt_exp = np.exp(dt_labels[i])
+            dt_sof = dt_exp/dt_exp.sum()
+            idx = np.argsort(dt_sof)[-1]
+            score = dt_sof[idx]
+            self.dt_labels[i] = [idx, score]
+
+    def draw_bev_bboxes(self, bboxes, labels=None, color=(255, 0, 0), extra_infos=True, rot_axis=2):
+        for i, bbox in enumerate(bboxes):
+            center = bboxes[i, 0:2]
+            center *= 10
+            center[0] += self.canvas.shape[0]/2
+            center[1] += self.canvas.shape[1]/2
+            size = bboxes[i, 3:5]
+            size*=10
+            yaw = bboxes[i, 6]
+            
+            rot = np.asmatrix([[math.cos(yaw), -math.sin(yaw)],\
+                                [math.sin(yaw),  math.cos(yaw)]])
+            plain_pts = np.asmatrix([[0.5 * size[0], 0.5*size[1]],\
+                                   [0.5 * size[0], -0.5*size[1]],\
+                                   [-0.5 * size[0], -0.5*size[1]],\
+                                   [-0.5 * size[0], 0.5*size[1]]])
+            tran_pts = np.asarray(rot * plain_pts.transpose())
+            tran_pts = tran_pts.transpose()
+            corners = np.arange(8).astype(np.float32).reshape(4, 2)
+            for j in range(4):
+                corners[j][0] = center[0] + tran_pts[j][0]
+                corners[j][1] = center[1] + tran_pts[j][1]
+            corners = corners.reshape((-1, 1, 2))
+            corners = corners.astype(dtype=np.int32)
+            cv2.polylines(self.canvas, [corners], True, color, 2)
+
+            if extra_infos:
+                dt, score  = labels[i]
+                cv2.putText(self.canvas, '%s : %.3f'%(str(dt), score), (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_COMPLEX, 0.6, color, 1)
+    
+
+    def show(self):
+        self.draw_bev_bboxes(self.gt, self.gt_labels, (0, 255, 0))
+        self.draw_bev_bboxes(self.dt, self.dt_labels, (255, 0, 0))
+        cv2.imshow('debug', self.canvas)
+        cv2.waitKey(0)
+        # exit()
+
+
