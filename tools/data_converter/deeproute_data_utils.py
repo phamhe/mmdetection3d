@@ -93,8 +93,8 @@ def get_label_anno(label_path):
             ht = obj['hard_type']
         hard_type.append(ht)
 
-        dimensions.append([obj['bounding_box']['length'],
-                            obj['bounding_box']['width'],
+        dimensions.append([obj['bounding_box']['width'],
+                            obj['bounding_box']['length'],
                             obj['bounding_box']['height']])
         location.append([obj['position']['x'],
                             obj['position']['y'],
