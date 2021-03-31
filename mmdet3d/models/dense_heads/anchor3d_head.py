@@ -219,7 +219,6 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         assert labels.max().item() <= self.num_classes
         loss_cls = self.loss_cls(
             cls_score, labels, label_weights, avg_factor=num_total_samples)
-
         # regression loss
         bbox_pred = bbox_pred.permute(0, 2, 3,
                                       1).reshape(-1, self.box_code_size)
@@ -235,23 +234,33 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         pos_bbox_pred = bbox_pred[pos_inds]
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
+
         # visual debug
-        if anchor_list is not None:
-            anchor_list = anchor_list.reshape(-1, self.box_code_size)
-            pos_bbox_anchors = anchor_list[pos_inds]
-            pos_cls_predicts = cls_score[pos_inds].cpu().detach().numpy()
-            gt_cls_labels = labels[pos_inds].cpu().detach().numpy()
+        # if anchor_list is not None:
+        #     anchor_list = anchor_list.reshape(-1, self.box_code_size)
+        #     pos_bbox_anchors = anchor_list[pos_inds]
 
-            points = np.zeros((1, 3))
-            gt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_targets)
-            dt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_pred)
-            gt_bboxes = gt_bboxes.cpu().detach().numpy() # gt delta
-            dt_bboxes = dt_bboxes.cpu().detach().numpy() # dt delta
-            show_result(points, gt_bboxes, dt_bboxes, '', '01410')
-        #     show_result_bev(None, gt_bboxes, dt_bboxes, 
-        #                     gt_cls_labels, pos_cls_predicts)
+        #     gt_cls_labels = labels[pos_inds].cpu().detach().numpy()
+        #     points = np.zeros((1, 3))
+        #     gt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_targets)
+        #     dt_anchor_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_pred)
+        #     dt_bboxes = self.bbox_coder.decode(anchor_list, bbox_pred)
 
+        #     gt_bboxes = gt_bboxes.cpu().detach().numpy() # gt delta
+        #     dt_bboxes = dt_bboxes.cpu().detach().numpy() # dt delta
+        #     dt_anchor_bboxes = dt_anchor_bboxes.cpu().detach().numpy() # dt delta
 
+        #     scores = cls_score.sigmoid()
+        #     max_scores, _ = scores.max(dim=1)
+        #     _, topk_inds = max_scores.topk(150)
+
+        #     bbox_pred = dt_bboxes[topk_inds.cpu().numpy(), :]
+        #     scores = scores[topk_inds, :]
+
+        #     show_result(points, pos_bbox_anchors, bbox_pred, '', '01410')
+        #     show_result(points, gt_bboxes, dt_anchor_bboxes, '', '01410')
+        #     # show_result_bev(None, gt_bboxes, bbox_pred, 
+        #     #                 gt_cls_labels, cls_score.cpu().detach()[topk_inds, :])
 
         # dir loss
         if self.use_direction_classifier:
@@ -389,6 +398,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
             dir_weights_list,
             num_total_samples=num_total_samples,
             anchor_list=None)
+            # anchor_list=anchors)
         return dict(
             loss_cls=losses_cls, loss_bbox=losses_bbox, loss_dir=losses_dir)
 

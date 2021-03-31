@@ -1,10 +1,13 @@
 _base_ = [
     '../_base_/models/hv_pointpillars_secfpn_deeproute.py',
     '../_base_/datasets/deeproute-3d-3class.py',
-    '../_base_/schedules/cyclic_40e.py', '../_base_/default_runtime.py'
+    # '../_base_/schedules/cyclic_40e.py', 
+    '../_base_/schedules/schedule_2x.py',
+    '../_base_/default_runtime.py'
 ]
 
-point_cloud_range = [-29.12, -39.68, -3, 69.12, 39.68, 3]
+# point_cloud_range = [-29.12, -39.68, -3, 69.12, 39.68, 3]
+point_cloud_range = [-74.88, -74.88, -7, 74.88, 74.88, 5]
 # dataset settings
 data_root = 'data/deeproute/'
 class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']
@@ -74,6 +77,16 @@ data = dict(
 # optimizer
 lr = 0.006
 optimizer = dict(lr=lr)
+lr_config = dict(
+    policy='step',
+    warmup='linear',
+    warmup_iters=1000,
+    warmup_ratio=1.0 / 1000,
+    step=[50, 70, 90])
+momentum_config = None
+total_epochs = 80
+
+# max_norm=35 is slightly better than 10 for PointPillars in the earlier
 # max_norm=35 is slightly better than 10 for PointPillars in the earlier
 # development of the codebase thus we keep the setting. But we does not
 # specifically tune this parameter.
@@ -83,4 +96,3 @@ evaluation = dict(interval=2)
 # PointPillars usually need longer schedule than second, we simply double
 # the training schedule. Do remind that since we use RepeatDataset and
 # repeat factor is 2, so we actually train 160 epochs.
-total_epochs = 80

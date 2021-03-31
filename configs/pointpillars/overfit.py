@@ -1,13 +1,20 @@
 _base_ = [
+    # '../_base_/models/hv_pointpillars_secfpn_deeproute_as_kitti.py',
     '../_base_/models/hv_pointpillars_secfpn_deeproute.py',
+    # '../_base_/models/hv_pointpillars_secfpn_kitti.py',
+    # '../_base_/models/hv_pointpillars_secfpn_waymo.py',
     '../_base_/datasets/deeproute-3d-3class.py',
-    '../_base_/schedules/cyclic_40e.py', '../_base_/default_runtime.py'
+    # '../_base_/schedules/cyclic_40e.py', 
+    '../_base_/schedules/schedule_2x.py',
+    '../_base_/default_runtime.py'
 ]
 
-point_cloud_range = [-29.12, -39.68, -3, 69.12, 39.68, 3]
+# point_cloud_range = [0, -39.68, -7, 69.12, 39.68, 5]
+point_cloud_range = [-74.88, -74.88, -7, 74.88, 74.88, 5]
 # dataset settings
 data_root = 'data/deeproute/'
 class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']
+#class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR']
 # PointPillars adopted a different sampling strategies among classes
 db_sampler = dict(
     data_root=data_root,
@@ -15,7 +22,7 @@ db_sampler = dict(
     rate=1.0,
     prepare=dict(
         filter_by_difficulty=[-1],
-        filter_by_min_points=dict(CAR=5, PEDESTRIAN=10, CYCLIST=10)),
+        filter_by_min_points=dict(CAR=5, PEDESTRIAN=5, CYCLIST=5)),
     classes=class_names,
     sample_groups=dict(CAR=15, PEDESTRIAN=10, CYCLIST=10))
 
@@ -74,14 +81,25 @@ data = dict(
 
 # In practice PointPillars also uses a different schedule
 # optimizer
-lr = 0.001
+lr = 0.005
 optimizer = dict(lr=lr)
+lr_config = dict(
+    policy='step',
+    warmup='linear',
+    warmup_iters=1000,
+    warmup_ratio=1.0 / 1000,
+    step=[30, 40])
+momentum_config = None
+# runtime settings
+total_epochs = 60
 # max_norm=35 is slightly better than 10 for PointPillars in the earlier
 # development of the codebase thus we keep the setting. But we does not
 # specifically tune this parameter.
-optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+
+# optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+
 # Use evaluation interval=2 reduce the number of evaluation timese
-evaluation = dict(interval=10)
+evaluation = dict(interval=100)
 # PointPillars usually need longer schedule than second, we simply double
 # the training schedule. Do remind that since we use RepeatDataset and
 # repeat factor is 2, so we actually train 160 epochs.
@@ -92,4 +110,3 @@ log_config = dict(
         dict(type='TextLoggerHook'),
         dict(type='TensorboardLoggerHook')
     ])
-total_epochs = 80

@@ -588,7 +588,7 @@ class Visualizer_bev(object):
 
     def show(self):
         self.draw_bev_bboxes(self.gt, self.gt_labels, (0, 255, 0))
-        self.draw_bev_bboxes(self.dt, self.dt_labels, (255, 0, 0))
+        # self.draw_bev_bboxes(self.dt, self.dt_labels, (255, 0, 0))
         cv2.imshow('debug', self.canvas)
         cv2.waitKey(0)
         # exit()
