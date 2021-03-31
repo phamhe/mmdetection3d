@@ -75,16 +75,16 @@ data = dict(
 
 # In practice PointPillars also uses a different schedule
 # optimizer
-lr = 0.006
+lr = 0.004
 optimizer = dict(lr=lr)
 lr_config = dict(
     policy='step',
     warmup='linear',
     warmup_iters=1000,
     warmup_ratio=1.0 / 1000,
-    step=[50, 70, 90])
+    step=[25, 35])
 momentum_config = None
-total_epochs = 80
+total_epochs = 40
 
 # max_norm=35 is slightly better than 10 for PointPillars in the earlier
 # max_norm=35 is slightly better than 10 for PointPillars in the earlier
@@ -92,7 +92,7 @@ total_epochs = 80
 # specifically tune this parameter.
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # Use evaluation interval=2 reduce the number of evaluation timese
-evaluation = dict(interval=2)
+evaluation = dict(interval=200)
 # PointPillars usually need longer schedule than second, we simply double
 # the training schedule. Do remind that since we use RepeatDataset and
 # repeat factor is 2, so we actually train 160 epochs.
