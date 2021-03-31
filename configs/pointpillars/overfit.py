@@ -1,10 +1,6 @@
 _base_ = [
-    # '../_base_/models/hv_pointpillars_secfpn_deeproute_as_kitti.py',
-    '../_base_/models/hv_pointpillars_secfpn_deeproute.py',
-    # '../_base_/models/hv_pointpillars_secfpn_kitti.py',
-    # '../_base_/models/hv_pointpillars_secfpn_waymo.py',
+    '../_base_/models/hv_pointpillars_secfpn_deeproute_normalbn.py',
     '../_base_/datasets/deeproute-3d-3class.py',
-    # '../_base_/schedules/cyclic_40e.py', 
     '../_base_/schedules/schedule_2x.py',
     '../_base_/default_runtime.py'
 ]
@@ -99,7 +95,7 @@ total_epochs = 60
 # optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 
 # Use evaluation interval=2 reduce the number of evaluation timese
-evaluation = dict(interval=100)
+evaluation = dict(interval=10)
 # PointPillars usually need longer schedule than second, we simply double
 # the training schedule. Do remind that since we use RepeatDataset and
 # repeat factor is 2, so we actually train 160 epochs.

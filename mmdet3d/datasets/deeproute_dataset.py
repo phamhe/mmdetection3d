@@ -257,9 +257,24 @@ class DeeprouteDataset(Custom3DDataset):
         else:
             tmp_dir = None
 
-        result_files = self.bbox2result_deeproute(outputs, self.CLASSES,
-                                              pklfile_prefix,
-                                              submission_prefix)
+        if 'pts_bbox' in outputs[0]:
+            result_files = dict()
+            for name in outputs[0]:
+                results_ = [out[name] for out in outputs]
+                pklfile_prefix_ = pklfile_prefix + name
+                if submission_prefix is not None:
+                    submission_prefix_ = f'{submission_prefix}_{name}'
+                else:
+                    submission_prefix_ = None
+                result_files_ = self.bbox2result_deeproute(results_, self.CLASSES,
+                                                       pklfile_prefix_,
+                                                       submission_prefix_)
+                result_files[name] = result_files_
+        else:
+            result_files = self.bbox2result_deeproute(outputs, self.CLASSES,
+                                                  pklfile_prefix,
+                                                  submission_prefix)
+
         return result_files, tmp_dir
 
     def evaluate(self,
@@ -317,8 +332,6 @@ class DeeprouteDataset(Custom3DDataset):
 
         if tmp_dir is not None:
             tmp_dir.cleanup()
-        # show=True
-        # out_dir = 'model_0324_deeproute_pp'
         if show:
             self.show(results, out_dir)
         return ap_dict
@@ -496,13 +509,15 @@ class DeeprouteDataset(Custom3DDataset):
             file_name = osp.split(pts_path)[-1].split('.')[0]
             # for now we convert points into depth mode
             points = example['points'][0]._data.numpy()
-            # points = Coord3DMode.convert_point(points, Coord3DMode.LIDAR,
-            #                                    Coord3DMode.DEPTH)
+            points = Coord3DMode.convert_point(points, Coord3DMode.LIDAR,
+                                               Coord3DMode.DEPTH)
             gt_bboxes = self.get_ann_info(i)['gt_bboxes_3d'].tensor
-            # gt_bboxes = Box3DMode.convert(gt_bboxes, Box3DMode.LIDAR,
-            #                               Box3DMode.DEPTH)
+            gt_bboxes = Box3DMode.convert(gt_bboxes, Box3DMode.LIDAR,
+                                          Box3DMode.DEPTH)
+            if 'pts_bbox' in result:
+                result = result['pts_bbox']
             pred_bboxes = result['boxes_3d'].tensor.numpy()
-            # pred_bboxes = Box3DMode.convert(pred_bboxes, Box3DMode.LIDAR,
-            #                                 Box3DMode.DEPTH)
+            pred_bboxes = Box3DMode.convert(pred_bboxes, Box3DMode.LIDAR,
+                                            Box3DMode.DEPTH)
             show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name,
                         show)
