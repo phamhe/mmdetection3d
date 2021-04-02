@@ -1,50 +1,43 @@
 _base_ = [
-    # '../_base_/models/hv_pointpillars_secfpn_deeproute_normalbn.py',
-    '../_base_/models/hv_pointpillars_secfpn_deeproute_car.py',
-    # '../_base_/datasets/deeproute-3d-3class.py',
-    '../_base_/datasets/deeproute-3d-car.py',
-    '../_base_/schedules/schedule_2x.py',
-    '../_base_/default_runtime.py'
+    '../_base_/models/hv_pointpillars_secfpn_kitti.py',
+    '../_base_/datasets/kitti-3d-3class.py',
+    '../_base_/schedules/cyclic_40e.py', '../_base_/default_runtime.py'
 ]
 
-# point_cloud_range = [0, -39.68, -7, 69.12, 39.68, 5]
-# point_cloud_range = [0, -39.68, -3, 74.88, 39.68, 2]
-point_cloud_range = [-74.88, -74.88, -4, 74.88, 74.88, 4]
+point_cloud_range = [0, -39.68, -3, 69.12, 39.68, 1]
 # dataset settings
-data_root = 'data/deeproute/'
-class_names = ['CAR']
-# class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']
-# class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR']
+data_root = 'data/kitti/'
+class_names = ['Pedestrian', 'Cyclist', 'Car']
 # PointPillars adopted a different sampling strategies among classes
 db_sampler = dict(
     data_root=data_root,
-    info_path=data_root + 'deeproute_dbinfos_train.pkl',
+    info_path=data_root + 'kitti_dbinfos_train.pkl',
     rate=1.0,
     prepare=dict(
         filter_by_difficulty=[-1],
-        filter_by_min_points=dict(CAR=5)),
+        filter_by_min_points=dict(Car=5, Pedestrian=10, Cyclist=10)),
     classes=class_names,
-    sample_groups=dict(CAR=15))
+    sample_groups=dict(Car=15, Pedestrian=10, Cyclist=10))
 
 # PointPillars uses different augmentation hyper parameters
 train_pipeline = [
     dict(type='LoadPointsFromFile', coord_type='LIDAR', load_dim=4, use_dim=4),
     dict(type='LoadAnnotations3D', with_bbox_3d=True, with_label_3d=True),
-    dict(type='ObjectSample', db_sampler=db_sampler),
-    dict(
-        type='ObjectNoise',
-        num_try=100,
-        translation_std=[0.25, 0.25, 0.25],
-        global_rot_range=[0.0, 0.0],
-        rot_range=[-0.15707963267, 0.15707963267]),
-    dict(type='RandomFlip3D', flip_ratio_bev_horizontal=0.5),
-    dict(
-        type='GlobalRotScaleTrans',
-        rot_range=[-0.78539816, 0.78539816],
-        scale_ratio_range=[0.95, 1.05]),
+    # dict(type='ObjectSample', db_sampler=db_sampler),
+    # dict(
+    #     type='ObjectNoise',
+    #     num_try=100,
+    #     translation_std=[0.25, 0.25, 0.25],
+    #     global_rot_range=[0.0, 0.0],
+    #     rot_range=[-0.15707963267, 0.15707963267]),
+    # dict(type='RandomFlip3D', flip_ratio_bev_horizontal=0.5),
+    # dict(
+    #     type='GlobalRotScaleTrans',
+    #     rot_range=[-0.78539816, 0.78539816],
+    #     scale_ratio_range=[0.95, 1.05]),
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
-    dict(type='PointShuffle'),
+    # dict(type='PointShuffle'),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(type='Collect3D', keys=['points', 'gt_bboxes_3d', 'gt_labels_3d'])
 ]
@@ -61,7 +54,7 @@ test_pipeline = [
                 rot_range=[0, 0],
                 scale_ratio_range=[1., 1.],
                 translation_std=[0, 0, 0]),
-            # dict(type='RandomFlip3D'),
+            dict(type='RandomFlip3D'),
             dict(
                 type='PointsRangeFilter', point_cloud_range=point_cloud_range),
             dict(
@@ -81,29 +74,19 @@ data = dict(
 
 # In practice PointPillars also uses a different schedule
 # optimizer
-lr = 0.004
+lr = 0.001
 optimizer = dict(lr=lr)
-lr_config = dict(
-    policy='step',
-    warmup='linear',
-    warmup_iters=1000,
-    warmup_ratio=1.0 / 1000,
-    step=[30, 40])
-momentum_config = None
-# runtime settings
-total_epochs = 60
 # max_norm=35 is slightly better than 10 for PointPillars in the earlier
 # development of the codebase thus we keep the setting. But we does not
 # specifically tune this parameter.
-
-# optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
-
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # Use evaluation interval=2 reduce the number of evaluation timese
 evaluation = dict(interval=10)
 # PointPillars usually need longer schedule than second, we simply double
 # the training schedule. Do remind that since we use RepeatDataset and
 # repeat factor is 2, so we actually train 160 epochs.
-checkpoint_config = dict(interval=2)
+total_epochs = 80
+checkpoint_config = dict(interval=10)
 log_config = dict(
     interval=1,
     hooks=[

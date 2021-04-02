@@ -235,12 +235,17 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
 
-        # visual debug
+        # # visual debug
         # if anchor_list is not None:
         #     anchor_list = anchor_list.reshape(-1, self.box_code_size)
         #     pos_bbox_anchors = anchor_list[pos_inds]
 
         #     gt_cls_labels = labels[pos_inds].cpu().detach().numpy()
+        #     index_r0 = pos_bbox_anchors[:, 6]==0
+        #     index_r0 = index_r0.cpu()
+        #     print(gt_cls_labels[index_r0])
+        #     print(pos_bbox_anchors[index_r0])
+        #     print(pos_bbox_targets[index_r0])
         #     points = np.zeros((1, 3))
         #     gt_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_targets)
         #     dt_anchor_bboxes = self.bbox_coder.decode(pos_bbox_anchors, pos_bbox_pred)
@@ -254,11 +259,20 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         #     max_scores, _ = scores.max(dim=1)
         #     _, topk_inds = max_scores.topk(150)
 
-        #     bbox_pred = dt_bboxes[topk_inds.cpu().numpy(), :]
+        #     anchor_pred_ori = anchor_list[topk_inds.cpu().numpy()]
+        #     index_r0_pred = anchor_pred_ori[:, 6]==0
+        #     index_r0_pred = index_r0_pred.cpu()
+        #     print(labels[topk_inds.cpu().numpy()][index_r0_pred])
+        #     print(anchor_pred_ori[index_r0_pred])
+        #     print(bbox_pred[topk_inds.cpu().numpy()][index_r0_pred])
+
+        #     bbox_pred_final = dt_bboxes[topk_inds.cpu().numpy(), :]
         #     scores = scores[topk_inds, :]
 
-        #     show_result(points, pos_bbox_anchors, bbox_pred, '', '01410')
+        #     show_result(points, pos_bbox_anchors, bbox_pred_final, '', '01410')
         #     show_result(points, gt_bboxes, dt_anchor_bboxes, '', '01410')
+        #     # show_result_bev(None, gt_bboxes, dt_anchor_bboxes, 
+        #     #                 gt_cls_labels, None)
         #     # show_result_bev(None, gt_bboxes, bbox_pred, 
         #     #                 gt_cls_labels, cls_score.cpu().detach()[topk_inds, :])
 
@@ -525,7 +539,7 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         # points = np.zeros((1, 3))
         # dt_bboxes = mlvl_bboxes.cpu().detach().numpy() # dt delta
         # show_result(points, None, dt_bboxes, '', '01410')
-        # exit()
+
         mlvl_bboxes_for_nms = xywhr2xyxyr(input_meta['box_type_3d'](
             mlvl_bboxes, box_dim=self.box_code_size).bev)
         mlvl_scores = torch.cat(mlvl_scores)
@@ -542,12 +556,19 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
                                        mlvl_scores, score_thr, cfg.max_num,
                                        cfg, mlvl_dir_scores)
         bboxes, scores, labels, dir_scores = results
-        if bboxes.shape[0] > 0:
-            dir_rot = limit_period(bboxes[..., 6] - self.dir_offset,
-                                   self.dir_limit_offset, np.pi)
-            bboxes[..., 6] = (
-                dir_rot + self.dir_offset +
-                np.pi * dir_scores.to(bboxes.dtype))
+
+        # if bboxes.shape[0] > 0:
+        #     # dir_rot = limit_period(bboxes[..., 6] - self.dir_offset,
+        #     #                        self.dir_limit_offset, np.pi)
+        #     dir_rot = limit_period(bboxes[..., 6],
+        #                            0, 2*np.pi)
+        #     inds_change = dir_rot >np.pi
+        #     dir_rot[inds_change] -= 2*np.pi
+
+        #     # bboxes[..., 6] = (
+        #     #     dir_rot + self.dir_offset +
+        #     #     np.pi * dir_scores.to(bboxes.dtype))
+        #     bboxes[..., 6] = dir_rot
         bboxes = input_meta['box_type_3d'](bboxes, box_dim=self.box_code_size)
 
         return bboxes, scores, labels

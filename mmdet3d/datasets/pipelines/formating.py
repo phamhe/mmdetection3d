@@ -182,12 +182,8 @@ class Collect3D(object):
 
         data['img_metas'] = DC(img_metas, cpu_only=True)
 
-        # visual debug
-        # print(results['gt_bboxes_3d']._data.tensor.cpu().numpy())
-        # print(results['gt_labels_3d']._data.cpu().numpy())
-        # print(results['gt_labels_3d']._data.cpu().numpy().shape)
         # print(np.unique(results['gt_labels_3d']._data.cpu().numpy()))
-        # print(results['gt_bboxes_3d']._data.tensor.cpu().numpy()[0])
+        # print(results['gt_bboxes_3d']._d$aa.tensor.cpu().numpy()[0])
         # self.show_results(results, 'debug')
         # exit()
 

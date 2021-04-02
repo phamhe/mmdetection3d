@@ -462,8 +462,8 @@ class DeeprouteDataset(Custom3DDataset):
         labels = box_dict['labels_3d']
         sample_idx = info['image']['image_idx']
         # TODO: remove the hack of yaw
-        box_preds.tensor[:, -1] = box_preds.tensor[:, -1] - np.pi
-        box_preds.limit_yaw(offset=0.5, period=np.pi * 2)
+        # box_preds.tensor[:, -1] = box_preds.tensor[:, -1] - np.pi
+        # box_preds.limit_yaw(offset=0, period=np.pi * 2)
 
         if len(box_preds) == 0:
             return dict(
@@ -509,15 +509,15 @@ class DeeprouteDataset(Custom3DDataset):
             file_name = osp.split(pts_path)[-1].split('.')[0]
             # for now we convert points into depth mode
             points = example['points'][0]._data.numpy()
-            points = Coord3DMode.convert_point(points, Coord3DMode.LIDAR,
-                                               Coord3DMode.DEPTH)
+            # points = Coord3DMode.convert_point(points, Coord3DMode.LIDAR,
+            #                                    Coord3DMode.DEPTH)
             gt_bboxes = self.get_ann_info(i)['gt_bboxes_3d'].tensor
-            gt_bboxes = Box3DMode.convert(gt_bboxes, Box3DMode.LIDAR,
-                                          Box3DMode.DEPTH)
+            # gt_bboxes = Box3DMode.convert(gt_bboxes, Box3DMode.LIDAR,
+            #                               Box3DMode.DEPTH)
             if 'pts_bbox' in result:
                 result = result['pts_bbox']
             pred_bboxes = result['boxes_3d'].tensor.numpy()
-            pred_bboxes = Box3DMode.convert(pred_bboxes, Box3DMode.LIDAR,
-                                            Box3DMode.DEPTH)
+            # pred_bboxes = Box3DMode.convert(pred_bboxes, Box3DMode.LIDAR,
+            #                                 Box3DMode.DEPTH)
             show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name,
                         show)

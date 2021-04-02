@@ -535,34 +535,47 @@ class Visualizer_bev(object):
                 gt_labels=None, dt_labels=None):
         super(Visualizer_bev, self).__init__()
         self.gt = gt_bboxes
-        self.dt = dt_bboxes
-        self.frame_size = []
-        self.frame_size.append(2*int(max(self.gt[:, 0].max(), self.dt[:, 1].max())) + 40)
-        self.frame_size.append(2*int(max(self.gt[:, 1].max(), self.dt[:, 0].max())) + 40)
+        self.frame_size = np.zeros((2,), dtype=np.int32)
+        self.gt[:, 1] = -self.gt[:, 1]
+        height = int(gt_bboxes[:, 1].max() - min(0, gt_bboxes[:, 1].min()) + 40)
+        width = int(gt_bboxes[:, 0].max() - min(0, gt_bboxes[:, 0].min()) + 40)
+        self.frame_size[0] = height
+        self.frame_size[1] = width
+
+        self.gt[:, 0] = self.gt[:, 0] + 20 + abs(min(0, self.gt[:, 0].min()))
+        self.gt[:, 1] = self.gt[:, 1] + 20 + abs(min(0, self.gt[:, 1].min()))
+        if dt_bboxes is not None:
+            self.dt = dt_bboxes
+            self.dt[:, 1] = -self.dt[:, 1]
+            self.dt[:, 0] = self.dt[:, 0] + 20 + abs(min(0, self.dt[:, 0].min()))
+            self.dt[:, 1] = self.dt[:, 1] + 20 + abs(min(0, self.dt[:, 1].min()))
+            self.dt[:, 0:6] *= 10
+
         self.frame_size[0] *= 10
         self.frame_size[1] *= 10
+        self.gt[:, 0:6] *= 10
+
+
         self.canvas = np.zeros((self.frame_size[0], self.frame_size[1], 3), dtype='uint8')
         self.canvas.fill(255)
 
         self.gt_labels = np.ones((gt_labels.shape[0], 2))
         self.gt_labels[:, 0] = gt_labels[:]
-        self.dt_labels = np.zeros((dt_labels.shape[0], 2))
-        for i, dt in enumerate(self.dt_labels):
-            # softmax
-            dt_exp = np.exp(dt_labels[i])
-            dt_sof = dt_exp/dt_exp.sum()
-            idx = np.argsort(dt_sof)[-1]
-            score = dt_sof[idx]
-            self.dt_labels[i] = [idx, score]
+        self.dt_labels = dt_labels
+        if dt_labels is not None:
+            self.dt_labels = np.zeros((dt_labels.shape[0], 2))
+            for i, dt in enumerate(self.dt_labels):
+                # softmax
+                dt_exp = np.exp(dt_labels[i])
+                dt_sof = dt_exp/dt_exp.sum()
+                idx = np.argsort(dt_sof)[-1]
+                score = dt_sof[idx]
+                self.dt_labels[i] = [idx, score]
 
     def draw_bev_bboxes(self, bboxes, labels=None, color=(255, 0, 0), extra_infos=True, rot_axis=2):
         for i, bbox in enumerate(bboxes):
             center = bboxes[i, 0:2]
-            center *= 10
-            center[0] += self.canvas.shape[0]/2
-            center[1] += self.canvas.shape[1]/2
             size = bboxes[i, 3:5]
-            size*=10
             yaw = bboxes[i, 6]
             
             rot = np.asmatrix([[math.cos(yaw), -math.sin(yaw)],\
@@ -582,13 +595,14 @@ class Visualizer_bev(object):
             cv2.polylines(self.canvas, [corners], True, color, 2)
 
             if extra_infos:
-                dt, score  = labels[i]
-                cv2.putText(self.canvas, '%s : %.3f'%(str(dt), score), (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_COMPLEX, 0.6, color, 1)
+                if labels is not None:
+                    dt, score  = labels[i]
+                    cv2.putText(self.canvas, '%s : %.3f'%(str(dt), score), (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_COMPLEX, 0.6, color, 1)
     
 
     def show(self):
         self.draw_bev_bboxes(self.gt, self.gt_labels, (0, 255, 0))
-        # self.draw_bev_bboxes(self.dt, self.dt_labels, (255, 0, 0))
+        self.draw_bev_bboxes(self.dt, self.dt_labels, (255, 0, 0))
         cv2.imshow('debug', self.canvas)
         cv2.waitKey(0)
         # exit()

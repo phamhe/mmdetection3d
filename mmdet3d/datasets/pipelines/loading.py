@@ -5,6 +5,8 @@ from mmdet3d.core.points import BasePoints, get_points_type
 from mmdet.datasets.builder import PIPELINES
 from mmdet.datasets.pipelines import LoadAnnotations
 
+from mmdet3d.core import show_result
+import os
 
 @PIPELINES.register_module()
 class LoadMultiViewImageFromFiles(object):
@@ -528,6 +530,23 @@ class LoadAnnotations3D(LoadAnnotations):
         results['pts_seg_fields'].append('pts_semantic_mask')
         return results
 
+    def show_results(self, result, out_dir):
+        """Results visualization.
+
+        Args:
+            data (list[dict]): Input points and the information of the sample.
+            result (list[dict]): Prediction results.
+            out_dir (str): Output directory of visualization result.
+        """
+        points = result['points'].tensor.numpy()
+        pts_filename = result['pts_filename']
+        file_name = os.path.split(pts_filename)[-1].split('.')[0]
+
+        assert out_dir is not None, 'Expect out_dir, got none.'
+
+        gt_bboxes = result['gt_bboxes_3d'].tensor.cpu().numpy()
+        show_result(points, gt_bboxes, None, out_dir, file_name)
+
     def __call__(self, results):
         """Call function to load multiple types annotations.
 
@@ -549,6 +568,9 @@ class LoadAnnotations3D(LoadAnnotations):
             results = self._load_masks_3d(results)
         if self.with_seg_3d:
             results = self._load_semantic_seg_3d(results)
+
+        # self.show_results(results, 'debug')
+        # exit()
 
         return results
 
