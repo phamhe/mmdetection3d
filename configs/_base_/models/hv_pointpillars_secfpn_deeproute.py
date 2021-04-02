@@ -3,12 +3,12 @@
 # Usually voxel size is changed consistently with the point cloud range
 # If point cloud range is modified, do remember to change all related
 # keys in the config.
-voxel_size = [0.32, 0.32, 6]
+voxel_size = [0.32, 0.32, 8]
 model = dict(
     type='MVXFasterRCNN',
     pts_voxel_layer=dict(
         max_num_points=20,
-        point_cloud_range=[-74.88, -74.88, -7, 74.88, 74.88, 5],
+        point_cloud_range=[-74.88, -74.88, -4, 74.88, 74.88, 4],
         voxel_size=voxel_size,
         max_voxels=(32000, 32000)),
     pts_voxel_encoder=dict(
@@ -19,23 +19,23 @@ model = dict(
         voxel_size=voxel_size,
         with_cluster_center=True,
         with_voxel_center=True,
-        point_cloud_range=[-74.88, -74.88, -7, 74.88, 74.88, 5],
-        norm_cfg=dict(type='naiveSyncBN1d', eps=1e-3, momentum=0.01)),
-        # norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01)),
+        point_cloud_range=[-74.88, -74.88, -4, 74.88, 74.88, 4],
+        # norm_cfg=dict(type='naiveSyncBN1d', eps=1e-3, momentum=0.01)),
+        norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01)),
     pts_middle_encoder=dict(
         type='PointPillarsScatter', in_channels=64, output_shape=[468, 468]),
     pts_backbone=dict(
         type='SECOND',
         in_channels=64,
-        norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
-        # norm_cfg=dict(type='BN2d', eps=1e-3, momentum=0.01),
+        # norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
+        norm_cfg=dict(type='BN2d', eps=1e-3, momentum=0.01),
         layer_nums=[3, 5, 5],
         layer_strides=[1, 2, 2],
         out_channels=[64, 128, 256]),
     pts_neck=dict(
         type='SECONDFPN',
-        norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
-        # norm_cfg=dict(type='BN2d', eps=1e-3, momentum=0.01),
+        # norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
+        norm_cfg=dict(type='BN2d', eps=1e-3, momentum=0.01),
         in_channels=[64, 128, 256],
         upsample_strides=[1, 2, 4],
         out_channels=[128, 128, 128]),
@@ -59,7 +59,7 @@ model = dict(
             # ranges=[[-29.12, -39.68, -2.2, 69.12, 39.68, -2.2],
             #         [-29.12, -39.68, -2.8, 69.12, 39.68, -2.8],
             #         [-29.12, -39.68, -2.0, 69.12, 39.68, -2.0]],
-            sizes = [[0.59, 0.50, 1.70],
+            sizes = [[0.59, 0.50, 1.50],
                      [0.62, 1.20, 1.0],
                      [1.85, 4.52, 1.72],
                      [3.10, 9, 3.60],

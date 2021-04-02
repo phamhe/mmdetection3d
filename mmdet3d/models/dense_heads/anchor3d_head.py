@@ -235,13 +235,13 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
 
-        # # visual debug
+        # visual debug
         # if anchor_list is not None:
         #     anchor_list = anchor_list.reshape(-1, self.box_code_size)
         #     pos_bbox_anchors = anchor_list[pos_inds]
 
         #     gt_cls_labels = labels[pos_inds].cpu().detach().numpy()
-        #     index_r0 = pos_bbox_anchors[:, 6]==0
+        #     index_r0 = pos_bbox_anchors[:, 6]==1.57
         #     index_r0 = index_r0.cpu()
         #     print(gt_cls_labels[index_r0])
         #     print(pos_bbox_anchors[index_r0])
@@ -265,12 +265,13 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         #     print(labels[topk_inds.cpu().numpy()][index_r0_pred])
         #     print(anchor_pred_ori[index_r0_pred])
         #     print(bbox_pred[topk_inds.cpu().numpy()][index_r0_pred])
+        #     exit()
 
         #     bbox_pred_final = dt_bboxes[topk_inds.cpu().numpy(), :]
         #     scores = scores[topk_inds, :]
 
-        #     show_result(points, pos_bbox_anchors, bbox_pred_final, '', '01410')
-        #     show_result(points, gt_bboxes, dt_anchor_bboxes, '', '01410')
+        #     # show_result(points, pos_bbox_anchors, bbox_pred_final, '', '01410')
+        #     # show_result(points, gt_bboxes, dt_anchor_bboxes, '', '01410')
         #     # show_result_bev(None, gt_bboxes, dt_anchor_bboxes, 
         #     #                 gt_cls_labels, None)
         #     # show_result_bev(None, gt_bboxes, bbox_pred, 

@@ -7,7 +7,7 @@ _base_ = [
 ]
 
 # point_cloud_range = [-29.12, -39.68, -3, 69.12, 39.68, 3]
-point_cloud_range = [-74.88, -74.88, -7, 74.88, 74.88, 5]
+point_cloud_range = [-74.88, -74.88, -4, 74.88, 74.88, 4]
 # dataset settings
 data_root = 'data/deeproute/'
 class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']
@@ -92,7 +92,7 @@ total_epochs = 40
 # specifically tune this parameter.
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # Use evaluation interval=2 reduce the number of evaluation timese
-evaluation = dict(interval=200)
+evaluation = dict(interval=2)
 # PointPillars usually need longer schedule than second, we simply double
 # the training schedule. Do remind that since we use RepeatDataset and
 # repeat factor is 2, so we actually train 160 epochs.
