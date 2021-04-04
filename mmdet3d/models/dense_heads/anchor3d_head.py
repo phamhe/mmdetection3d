@@ -4,7 +4,7 @@ from mmcv.cnn import bias_init_with_prob, normal_init
 from mmcv.runner import force_fp32
 from torch import nn as nn
 
-from mmdet3d.core import (PseudoSampler, box3d_multiclass_nms, limit_period,
+from mmdet3d.core import (PseudoSampler, box3d_multiclass_nms, box3d_singleclass_nms, limit_period,
                           xywhr2xyxyr)
 from mmdet.core import (build_anchor_generator, build_assigner,
                         build_bbox_coder, build_sampler, multi_apply)
@@ -517,59 +517,78 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
             bbox_pred = bbox_pred.permute(1, 2,
                                           0).reshape(-1, self.box_code_size)
 
-            nms_pre = cfg.get('nms_pre', -1)
-            if nms_pre > 0 and scores.shape[0] > nms_pre:
-                if self.use_sigmoid_cls:
-                    max_scores, _ = scores.max(dim=1)
+            nms_pres = cfg.get('nms_pre', -1)
+            cls_idxs = cfg.get('cls_idxs', -1)
+            cls_bboxes = []
+            cls_scores = []
+            cls_dir_cls_scores = []
+            if self.use_sigmoid_cls:
+                max_scores, indexs = scores.max(dim=1)
+            else:
+                max_scores, indexs = scores[:, :-1].max(dim=1)
+
+            for idx, nms_pre in enumerate(nms_pres):
+                cls_dim = cls_idxs[idx]
+                if isinstance(cls_dim, int):
+                    mask = indexs == cls_dim
                 else:
-                    max_scores, _ = scores[:, :-1].max(dim=1)
-                _, topk_inds = max_scores.topk(nms_pre)
+                    mask = np.isin(indexs.cpu(), cls_dim)
 
-                anchors = anchors[topk_inds, :]
-                bbox_pred = bbox_pred[topk_inds, :]
-                scores = scores[topk_inds, :]
-                dir_cls_score = dir_cls_score[topk_inds]
+                _, topk_inds = max_scores[mask].topk(nms_pre)
 
-            bboxes = self.bbox_coder.decode(anchors, bbox_pred)
-            mlvl_bboxes.append(bboxes)
-            mlvl_scores.append(scores)
-            mlvl_dir_scores.append(dir_cls_score)
+                anchors_ = anchors[mask][topk_inds, :]
+                bbox_pred_ = bbox_pred[mask][topk_inds, :]
+                scores_ = scores[mask][topk_inds, :]
+                dir_cls_scores_ = dir_cls_score[mask][topk_inds]
+                bboxes = self.bbox_coder.decode(anchors_, bbox_pred_)
 
-        mlvl_bboxes = torch.cat(mlvl_bboxes)
+                cls_bboxes.append(bboxes)
+                cls_scores.append(scores_)
+                cls_dir_cls_scores.append(dir_cls_scores_)
+
+            for idx, cls_bbox in enumerate(cls_bboxes):
+                if len(mlvl_bboxes) == len(cls_bboxes):
+                    mlvl_bboxes[idx] = torch.cat([mlvl_bboxes[idx], cls_bboxes[idx]])
+                    mlvl_scores[idx] = torch.cat([mlvl_scores[idx], cls_scores[idx]])
+                    mlvl_dir_scores = torch.cat([mlvl_dir_scores[idx], cls_dir_cls_scores[idx]])
+                else:
+                    mlvl_bboxes.append(cls_bboxes[idx])
+                    mlvl_scores.append(cls_scores[idx])
+                    mlvl_dir_scores.append(cls_dir_cls_scores[idx])
+
         # visual debug
         # points = np.zeros((1, 3))
         # dt_bboxes = mlvl_bboxes.cpu().detach().numpy() # dt delta
         # show_result(points, None, dt_bboxes, '', '01410')
+        final_bboxes = []
+        final_scores = []
+        final_labels = []
+        final_dirs = []
+        for idx, mlvl_bboxes_cls in enumerate(mlvl_bboxes):
 
-        mlvl_bboxes_for_nms = xywhr2xyxyr(input_meta['box_type_3d'](
-            mlvl_bboxes, box_dim=self.box_code_size).bev)
-        mlvl_scores = torch.cat(mlvl_scores)
-        mlvl_dir_scores = torch.cat(mlvl_dir_scores)
+            mlvl_bboxes_for_nms = xywhr2xyxyr(input_meta['box_type_3d'](
+                mlvl_bboxes_cls, box_dim=self.box_code_size).bev)
 
-        if self.use_sigmoid_cls:
-            # Add a dummy background class to the front when using sigmoid
-            padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
-            mlvl_scores = torch.cat([mlvl_scores, padding], dim=1)
+            if self.use_sigmoid_cls:
+                # Add a dummy background class to the front when using sigmoid
+                padding = mlvl_scores[idx].new_zeros(mlvl_scores[idx].shape[0], 1)
+                mlvl_scores_ = torch.cat([mlvl_scores[idx], padding], dim=1)
 
-        score_thr = cfg.get('score_thr', 0)
+            score_thr = cfg.get('score_thr', 0)
+            class_ = cls_idxs[idx]
 
-        results = box3d_multiclass_nms(mlvl_bboxes, mlvl_bboxes_for_nms,
-                                       mlvl_scores, score_thr, cfg.max_num,
-                                       cfg, mlvl_dir_scores)
-        bboxes, scores, labels, dir_scores = results
+            results = box3d_singleclass_nms(class_, mlvl_bboxes_cls, mlvl_bboxes_for_nms,
+                                           mlvl_scores_, score_thr, cfg.max_num[idx],
+                                           cfg, mlvl_dir_scores[idx])
+            bboxes, scores, labels, dir_scores = results
+            final_bboxes.append(bboxes)
+            final_scores.append(scores)
+            final_labels.append(labels)
+            final_dirs.append(dir_scores)
+        final_bboxes = torch.cat(final_bboxes)
+        final_scores = torch.cat(final_scores)
+        final_labels = torch.cat(final_labels)
+        final_dir_scores = torch.cat(final_dirs)
+        final_bboxes = input_meta['box_type_3d'](final_bboxes, box_dim=self.box_code_size)
 
-        # if bboxes.shape[0] > 0:
-        #     # dir_rot = limit_period(bboxes[..., 6] - self.dir_offset,
-        #     #                        self.dir_limit_offset, np.pi)
-        #     dir_rot = limit_period(bboxes[..., 6],
-        #                            0, 2*np.pi)
-        #     inds_change = dir_rot >np.pi
-        #     dir_rot[inds_change] -= 2*np.pi
-
-        #     # bboxes[..., 6] = (
-        #     #     dir_rot + self.dir_offset +
-        #     #     np.pi * dir_scores.to(bboxes.dtype))
-        #     bboxes[..., 6] = dir_rot
-        bboxes = input_meta['box_type_3d'](bboxes, box_dim=self.box_code_size)
-
-        return bboxes, scores, labels
+        return final_bboxes, final_scores, final_labels

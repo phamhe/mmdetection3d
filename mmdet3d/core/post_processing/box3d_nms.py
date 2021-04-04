@@ -4,6 +4,98 @@ import torch
 
 from mmdet3d.ops.iou3d.iou3d_utils import nms_gpu, nms_normal_gpu
 
+def box3d_singleclass_nms(cls,
+                         mlvl_bboxes,
+                         mlvl_bboxes_for_nms,
+                         mlvl_scores,
+                         score_thr,
+                         max_num,
+                         cfg,
+                         mlvl_dir_scores=None):
+    """Single-class nms for 3D boxes.
+
+    Args:
+        mlvl_bboxes (torch.Tensor): Multi-level boxes with shape (N, M).
+            M is the dimensions of boxes.
+        mlvl_bboxes_for_nms (torch.Tensor): Multi-level boxes with shape
+            (N, 4). N is the number of boxes.
+        mlvl_scores (torch.Tensor): Multi-level boxes with shape
+            (N, ). N is the number of boxes.
+        score_thr (float): Score thredhold to filter boxes with low
+            confidence.
+        max_num (int): Maximum number of boxes will be kept.
+        cfg (dict): Configuration dict of NMS.
+        mlvl_dir_scores (torch.Tensor, optional): Multi-level scores
+            of direction classifier. Defaults to None.
+
+    Returns:
+        tuple[torch.Tensor]: Return results after nms, including 3D \
+            bounding boxes, scores and direction scores.
+    """
+    bboxes = []
+    scores = []
+    labels = []
+    dir_scores = []
+
+    # get bboxes and scores of this class
+    cls_inds = mlvl_scores > score_thr
+    if isinstance(cls, int):
+        cls_inds = cls_inds[:, cls]
+        _scores = mlvl_scores[cls_inds, cls]
+    else:
+        cls_inds_ = cls_inds.new_full((cls_inds.shape[0],), False)
+        for idx in cls:
+            cls_inds_ = cls_inds_ + cls_inds[:, idx]
+        cls_inds = cls_inds_
+        max_scores, indexs = mlvl_scores.max(dim=1)
+        _scores = max_scores[cls_inds]
+
+    
+    _bboxes_for_nms = mlvl_bboxes_for_nms[cls_inds]
+
+    if cfg.use_rotate_nms:
+        nms_func = nms_gpu
+    else:
+        nms_func = nms_normal_gpu
+
+    selected = nms_func(_bboxes_for_nms, _scores, cfg.nms_thr)
+    _mlvl_bboxes = mlvl_bboxes[cls_inds, :]
+    bboxes.append(_mlvl_bboxes[selected])
+    scores.append(_scores[selected])
+
+    if isinstance(cls, int):
+        cls_label = mlvl_bboxes.new_full((len(selected),),
+                                           cls,
+                                           dtype=torch.long)
+    else:
+        cls_label = indexs[selected].reshape(-1,)
+        
+    labels.append(cls_label)
+
+    if mlvl_dir_scores is not None:
+        _mlvl_dir_scores = mlvl_dir_scores[cls_inds]
+        dir_scores.append(_mlvl_dir_scores[selected])
+
+    if bboxes:
+        bboxes = torch.cat(bboxes, dim=0)
+        scores = torch.cat(scores, dim=0)
+        labels = torch.cat(labels, dim=0)
+        if mlvl_dir_scores is not None:
+            dir_scores = torch.cat(dir_scores, dim=0)
+        if bboxes.shape[0] > max_num:
+            _, inds = scores.sort(descending=True)
+            inds = inds[:max_num]
+            bboxes = bboxes[inds, :]
+            scores = scores[inds]
+            labels = labels[inds]
+            if mlvl_dir_scores is not None:
+                dir_scores = dir_scores[inds]
+    else:
+        bboxes = mlvl_scores.new_zeros((0, mlvl_bboxes.size(-1)))
+        scores = mlvl_scores.new_zeros((0, ))
+        dir_scores = mlvl_scores.new_zeros((0, ))
+        labels = mlvl_scores.new_zeros((0, ), dtype=torch.long)
+    return bboxes, scores, labels, dir_scores
 
 def box3d_multiclass_nms(mlvl_bboxes,
                          mlvl_bboxes_for_nms,
