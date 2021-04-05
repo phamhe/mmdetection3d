@@ -58,7 +58,10 @@ def box3d_singleclass_nms(cls,
     else:
         nms_func = nms_normal_gpu
 
-    selected = nms_func(_bboxes_for_nms, _scores, cfg.nms_thr)
+    if _scores.shape[0] == 0:
+        selected = _scores.new_full((0,), 0, dtype=torch.int64)
+    else:
+        selected = nms_func(_bboxes_for_nms, _scores, cfg.nms_thr)
     _mlvl_bboxes = mlvl_bboxes[cls_inds, :]
     bboxes.append(_mlvl_bboxes[selected])
     scores.append(_scores[selected])

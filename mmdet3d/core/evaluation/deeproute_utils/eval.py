@@ -47,8 +47,6 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty):
         #     valid_class = 0
         # elif (current_cls_name == 'Car'.lower() and 'Van'.lower() == gt_name):
         #     valid_class = 0
-        else:
-            valid_class = -1
         ignore = False
         if ((gt_anno['occluded'][i] > MAX_OCCLUSION[difficulty])
                 or (gt_anno['truncated'][i] > MAX_TRUNCATION[difficulty])):
@@ -62,8 +60,8 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty):
         else:
             ignored_gt.append(-1)
     # for i in range(num_gt):
-        # if gt_anno['name'][i] == 'DontCare':
-        #     dc_bboxes.append(gt_anno['bbox'][i])
+    #   if gt_anno['name'][i] == 'DontCare':
+    #       dc_bboxes.append(gt_anno['bbox'][i])
     for i in range(num_dt):
         if (dt_anno['name'][i].lower() == current_cls_name):
             valid_class = 1
@@ -434,14 +432,14 @@ def _prepare_data(gt_annos, dt_annos, current_class, difficulty):
         total_dc_num.append(dc_bboxes.shape[0])
         dontcares.append(dc_bboxes)
         total_num_valid_gt += num_valid_gt
-        # gt_datas = np.concatenate(
-        #     [gt_annos[i]['bbox'], gt_annos[i]['alpha'][..., np.newaxis]], 1)
+        gt_datas = np.concatenate([
+            np.zeros((gt_annos[i]['location'].shape[0], 4)), 
+            np.zeros(gt_annos[i]['location'].shape[0])[..., np.newaxis], 
+            ], 1)
         # dt_datas = np.concatenate([
         #     dt_annos[i]['bbox'], dt_annos[i]['alpha'][..., np.newaxis],
         #     dt_annos[i]['score'][..., np.newaxis]
         # ], 1)
-        gt_datas = np.concatenate(
-            [np.zeros((1, 4)), np.zeros(1)[..., np.newaxis]], 1)
         dt_datas = np.concatenate([
             np.zeros((dt_annos[i]['score'].shape[0], 4)), np.zeros(dt_annos[i]['score'].shape[0])[..., np.newaxis],
             dt_annos[i]['score'][..., np.newaxis]

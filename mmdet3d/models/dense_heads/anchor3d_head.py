@@ -565,7 +565,6 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
         final_labels = []
         final_dirs = []
         for idx, mlvl_bboxes_cls in enumerate(mlvl_bboxes):
-
             mlvl_bboxes_for_nms = xywhr2xyxyr(input_meta['box_type_3d'](
                 mlvl_bboxes_cls, box_dim=self.box_code_size).bev)
 
