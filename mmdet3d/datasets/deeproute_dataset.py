@@ -12,6 +12,8 @@ from ..core import show_result
 from ..core.bbox import (Box3DMode, LiDARInstance3DBoxes, Coord3DMode)
 from .custom_3d import Custom3DDataset
 
+import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d 
 
 @DATASETS.register_module()
 class DeeprouteDataset(Custom3DDataset):
@@ -277,6 +279,69 @@ class DeeprouteDataset(Custom3DDataset):
 
         return result_files, tmp_dir
 
+    def plot_extra(self, eval_res, out_dir, cls_group=[[0, 1], [2, 3, 4]]):
+        color = {
+                0:['red', 'darkred', 'lightcoral'],
+                1:['green', 'darkgreen', 'lightgreen'],
+                2:['blue', 'darkblue', 'royalblue'],
+                }
+        plt_ptr = 0
+        group_ptr = 0
+        for level in eval_res:
+            eval_res_level = eval_res[level]
+            for eval_key in eval_res_level:
+                for idx, cls_err_all in enumerate(eval_res_level[eval_key]):
+                    if idx not in cls_group[group_ptr]:
+                        group_ptr += 1
+                        while group_ptr > len(cls_group) - 1:
+                            group_ptr %= len(cls_group)
+                        plt_ptr += 1
+                        plt.figure(plt_ptr)
+
+                    cls_err_all = np.stack(cls_err_all, axis=0)
+                    cls_err_all = np.sort(cls_err_all, 0)
+                    cls_err_min_all = cls_err_all[0]
+                    cls_err_max_all = cls_err_all[-1]
+                    axis_x_all = np.linspace(cls_err_min_all, cls_err_max_all, 10)
+                    if len(axis_x_all.shape) > 1:
+                        dim = axis_x_all.shape[1]
+                    else:
+                        dim = 1
+                    for i in range(dim):
+                        cls_err = cls_err_all
+                        axis_x = axis_x_all
+                        cls_err_min = cls_err_min_all
+                        cls_err_max = cls_err_max_all
+                        if len(axis_x_all.shape) > 1:
+                            cls_err = cls_err_all[:, i]
+                            axis_x = axis_x_all[:, i]
+                            cls_err_min = cls_err_min_all[i]
+                            cls_err_max = cls_err_max_all[i]
+                        axis_y = np.zeros(axis_x.shape[0])
+
+                        ptr = 0
+                        count = 0
+                        for j, err in enumerate(cls_err):
+                            count += 1
+                            if err >= axis_x[ptr]:
+                                axis_y[ptr] = count
+                                ptr += 1
+                                count = 0
+
+                        li = interp1d(axis_x, axis_y, kind='cubic')
+                        axis_x_new = np.linspace(cls_err_min, cls_err_max, 1000)
+                        axis_y_new = li(axis_x_new)
+                        plt.plot(axis_x_new, axis_y_new, 
+                                color=color[idx%(
+                                        len(cls_group[group_ptr]))][i],
+                                 label='cls_%s_%s_%s_%s'%(idx, level, eval_key, i))
+                    plt.xlabel(eval_key)
+                    plt.ylabel('times')
+                    plt.title('cls_%s_%s_%s'%(idx, level, eval_key))
+                    plt.legend()
+                    # plt.show()
+                    plt.savefig(os.path.join(out_dir, 'cls_%s_%s_%s'%(idx, level, eval_key)))
+
     def evaluate(self,
                  results,
                  metric=None,
@@ -313,11 +378,12 @@ class DeeprouteDataset(Custom3DDataset):
             ap_dict = dict()
             for name, result_files_ in result_files.items():
                 eval_types = ['bev', '3d']
-                ap_result_str, ap_dict_ = deeproute_eval(
+                ap_result_str, ap_dict_, eval_res = deeproute_eval(
                     gt_annos,
                     result_files_,
                     self.CLASSES,
                     eval_types=eval_types)
+                self.plot_extra(eval_res, out_dir)
                 for ap_type, ap in ap_dict_.items():
                     ap_dict[f'{name}/{ap_type}'] = float('{:.4f}'.format(ap))
 
@@ -326,7 +392,7 @@ class DeeprouteDataset(Custom3DDataset):
 
         else:
             eval_types = ['bev', '3d']
-            ap_result_str, ap_dict = deeproute_eval(gt_annos, result_files,
+            ap_result_str, ap_dict, eval_res = deeproute_eval(gt_annos, result_files,
                                                 self.CLASSES, eval_types = ['bev', '3d'])
             print_log('\n' + ap_result_str, logger=logger)
 

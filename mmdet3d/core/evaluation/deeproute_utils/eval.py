@@ -2,7 +2,7 @@ import gc
 import io as sysio
 import numba
 import numpy as np
-
+import torch
 
 @numba.jit
 def get_thresholds(scores: np.ndarray, num_gt, num_sample_pts=41):
@@ -565,11 +565,11 @@ def eval_class(gt_annos,
     }
 
     # clean temp variables
-    del overlaps
+    # del overlaps
     del parted_overlaps
 
     gc.collect()
-    return ret_dict
+    return ret_dict, overlaps
 
 
 def get_mAP(prec):
@@ -613,16 +613,16 @@ def do_eval(gt_annos,
 
     mAP_bev = None
     if 'bev' in eval_types:
-        ret = eval_class(gt_annos, dt_annos, current_classes, difficultys, 1,
+        ret, overlaps_bev = eval_class(gt_annos, dt_annos, current_classes, difficultys, 1,
                          min_overlaps)
         mAP_bev = get_mAP(ret['precision'])
 
     mAP_3d = None
     if '3d' in eval_types:
-        ret = eval_class(gt_annos, dt_annos, current_classes, difficultys, 2,
+        ret, overlaps_3d = eval_class(gt_annos, dt_annos, current_classes, difficultys, 2,
                          min_overlaps)
         mAP_3d = get_mAP(ret['precision'])
-    return mAP_bbox, mAP_bev, mAP_3d, mAP_aos
+    return mAP_bbox, mAP_bev, mAP_3d, mAP_aos, overlaps_3d
 
 
 def do_coco_style_eval(gt_annos, dt_annos, current_classes, overlap_ranges,
@@ -643,11 +643,118 @@ def do_coco_style_eval(gt_annos, dt_annos, current_classes, overlap_ranges,
         mAP_aos = mAP_aos.mean(-1)
     return mAP_bbox, mAP_bev, mAP_3d, mAP_aos
 
+def gather_results(gt_annos,
+                    dt_annos,
+                    overlaps,
+                    min_overlaps):
+    CLASS_NAMES = {'PEDESTRIAN':0, 'CYCLIST':1, 'CAR':2, 'TRUCK':3, 'BUS':4}
+    results = {}
+    for i in range(min_overlaps.shape[0]):
+        results['level_%s'%i] = []
+        
+    for gts, dts, ious in zip(gt_annos, dt_annos, overlaps):
+        if not ious.any():
+            continue
+        max_ious, inds = torch.tensor(ious).max(dim=1)
+        inds_set = {}
+        for i, idx in enumerate(inds):
+            if int(idx) not in inds_set:
+                inds_set[int(idx)] = []
+            inds_set[int(idx)].append(i)
+        for i in range(min_overlaps.shape[0]):
+            frame_res = []
+            for idx, cls in enumerate(gts['name']):
+                if cls not in CLASS_NAMES:
+                    continue
+                res = {
+                        'gt_annos': {
+                                    'name':gts['name'][idx],
+                                    'dimensions':gts['dimensions'][idx],
+                                    'location':gts['location'][idx],
+                                    'rotation_y':gts['rotation_y'][idx],
+                                    },
+                        'dts':[],
+                        }
+                if idx in inds_set:
+                    for j in inds_set[idx]:
+                        if max_ious[j] > min_overlaps[i][CLASS_NAMES[cls]]:
+                            dt = {
+                                 'name':dts['name'][j],
+                                 'dimensions':dts['dimensions'][j],
+                                 'location':dts['location'][j],
+                                 'rotation_y':dts['rotation_y'][j],
+                                 'score':dts['score'][j],
+                                 'iou':max_ious[j],
+                                }
+                            res['dts'].append(dt)
+                frame_res.append(res)
+            results['level_%s'%i].append(frame_res)
+    return results
+
+def reform_data(res):
+    CLASS_NAMES = {'PEDESTRIAN':0, 'CYCLIST':1, 'CAR':2, 'TRUCK':3, 'BUS':4}
+    new_results = {}
+    for key in res:
+        new_results[key] = {
+                            'dimensions':[[], [], [], [], []],
+                            'location':[[], [], [], [], []],
+                            'rotation_y':[[], [], [], [], []],
+                            'iou':[[], [], [], [], []],
+                            }
+        for frame_res in res[key]:
+            for pair in frame_res:
+                gt = pair['gt_annos']
+                if len(pair['dts']) == 0:
+                    continue
+                for dt in pair['dts']:
+                    for eval_key in gt:
+                        if eval_key == 'name':
+                            continue
+                        if eval_key == 'rotation_y':
+                            if dt[eval_key] <= 0:
+                                dt[eval_key] += np.pi
+                            if gt[eval_key] <= 0:
+                                gt[eval_key] += np.pi
+                            new_results[key][eval_key][CLASS_NAMES[gt['name']]].append(abs(dt[eval_key]-gt[eval_key]))
+                            continue
+                        err = abs(dt[eval_key]-gt[eval_key])
+                        inds = gt[eval_key] > 0.0001
+                        # inds_ = gt[eval_key] <= 0.0001
+                        err[inds] /= gt[eval_key][inds]
+                        new_results[key][eval_key][CLASS_NAMES[gt['name']]].append(err)
+                    new_results[key]['iou'][CLASS_NAMES[gt['name']]].append(float(dt['iou']))
+    return new_results
+
+def extra_eval(gt_annos, 
+                dt_annos,
+                overlaps, 
+                current_classes, 
+                min_overlaps=np.array([
+                              [0.5, 0.5, 0.7, 0.7, 0.7],
+                              [0.3, 0.3, 0.5, 0.5, 0.5],
+                             ])):
+
+    results = gather_results(gt_annos, dt_annos, overlaps, min_overlaps)
+    eval_res = reform_data(results)
+    extra_res = []
+    for level in eval_res:
+        level_res = {}
+        for eval_key in eval_res[level]:
+            level_res[eval_key] = {}
+            for idx, cls_err in enumerate(eval_res[level][eval_key]):
+                level_res[eval_key][idx] = []
+                if cls_err == []:
+                    continue
+                cls_res = np.sum(np.stack(cls_err, axis=0), axis=0)/len(cls_err)
+                level_res[eval_key][idx] = cls_res
+        extra_res.append(level_res)
+    return extra_res, eval_res
 
 def deeproute_eval(gt_annos,
                dt_annos,
                current_classes,
-               eval_types=['bbox', 'bev', '3d']):
+               eval_types=['bev', '3d'], 
+               extra_flag=True):
     """Deeproute evaluation.
 
     Args:
@@ -663,12 +770,18 @@ def deeproute_eval(gt_annos,
     assert len(eval_types) > 0, 'must contain at least one evaluation type'
     if 'aos' in eval_types:
         assert 'bbox' in eval_types, 'must evaluate bbox when evaluating aos'
-    overlap_0_7 = np.array([[0.7, 0.5, 0.5, 0.7,
-                             0.5], [0.7, 0.5, 0.5, 0.7, 0.5],
-                            [0.7, 0.5, 0.5, 0.7, 0.5]])
-    overlap_0_5 = np.array([[0.7, 0.5, 0.5, 0.7, 0.5],
-                            [0.5, 0.25, 0.25, 0.5, 0.25],
-                            [0.5, 0.25, 0.25, 0.5, 0.25]])
+    # overlap_0_7 = np.array([[0.7, 0.5, 0.5, 0.7,
+    #                          0.5], [0.7, 0.5, 0.5, 0.7, 0.5],
+    #                         [0.7, 0.5, 0.5, 0.7, 0.5]])
+    # overlap_0_5 = np.array([[0.7, 0.5, 0.5, 0.7, 0.5],
+    #                         [0.5, 0.25, 0.25, 0.5, 0.25],
+    #                         [0.5, 0.25, 0.25, 0.5, 0.25]])
+    overlap_0_7 = np.array([[0.5, 0.5, 0.7, 0.7, 0.7], 
+                            [0.5, 0.5, 0.7, 0.7, 0.7],
+                            [0.5, 0.5, 0.7, 0.7, 0.7]])
+    overlap_0_5 = np.array([[0.3, 0.3, 0.5, 0.5, 0.5],
+                            [0.3, 0.3, 0.5, 0.5, 0.5],
+                            [0.3, 0.3, 0.5, 0.5, 0.5]])
     min_overlaps = np.stack([overlap_0_7, overlap_0_5], axis=0)  # [2, 3, 5]
     class_to_name = {
         0: 'PEDESTRIAN',
@@ -715,9 +828,10 @@ def deeproute_eval(gt_annos,
     if compute_aos:
         eval_types.append('aos')
 
-    mAPbbox, mAPbev, mAP3d, mAPaos = do_eval(gt_annos, dt_annos,
+    mAPbbox, mAPbev, mAP3d, mAPaos, overlaps_3d = do_eval(gt_annos, dt_annos,
                                              current_classes, min_overlaps,
                                              eval_types)
+    extra_res, eval_res = extra_eval(gt_annos, dt_annos, overlaps_3d, current_classes)
 
     ret_dict = {}
     difficulty = ['easy', 'moderate', 'hard']
@@ -742,6 +856,12 @@ def deeproute_eval(gt_annos,
             if compute_aos:
                 result += 'aos  AP:{:.2f}, {:.2f}, {:.2f}\n'.format(
                     *mAPaos[j, :, i])
+
+            if extra_flag:
+                result += 'deminsions ERR:{:.4f}, {:.4f}, {:.4f}\n'.format(*extra_res[i]['dimensions'][j][:])
+                result += 'location   ERR:{:.4f}, {:.4f}, {:.4f}\n'.format(*extra_res[i]['location'][j][:])
+                result += 'ratation_y ERR:{:.4f}\n'.format(extra_res[i]['rotation_y'][j])
+                result += 'iou        AVE:{:.4f}\n'.format(extra_res[i]['iou'][j])
 
             # prepare results for logger
             for idx in range(3):
@@ -784,7 +904,7 @@ def deeproute_eval(gt_annos,
             if mAPbbox is not None:
                 ret_dict[f'Deeproute/Overall_2D_{postfix}'] = mAPbbox[idx, 0]
 
-    return result, ret_dict
+    return result, ret_dict, eval_res
 
 
 def deeproute_eval_coco_style(gt_annos, dt_annos, current_classes):
