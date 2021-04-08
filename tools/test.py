@@ -22,6 +22,7 @@ def parse_args():
     parser.add_argument('config', help='test config file path')
     parser.add_argument('checkpoint', help='checkpoint file')
     parser.add_argument('--out', help='output result file in pickle format')
+    parser.add_argument('--noinference', action='store_true')
     parser.add_argument(
         '--fuse-conv-bn',
         action='store_true',
@@ -180,22 +181,24 @@ def main():
     else:
         model.CLASSES = dataset.CLASSES
 
-    if not distributed:
-        model = MMDataParallel(model, device_ids=[0])
-        outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
-    else:
-        model = MMDistributedDataParallel(
-            model.cuda(),
-            device_ids=[torch.cuda.current_device()],
-            broadcast_buffers=False)
-        outputs = multi_gpu_test(model, data_loader, args.tmpdir,
-                                 args.gpu_collect)
+    if not args.noinference:
+        if not distributed:
+            model = MMDataParallel(model, device_ids=[0])
+            outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
+        else:
+            model = MMDistributedDataParallel(
+                model.cuda(),
+                device_ids=[torch.cuda.current_device()],
+                broadcast_buffers=False)
+            outputs = multi_gpu_test(model, data_loader, args.tmpdir,
+                                     args.gpu_collect)
 
     rank, _ = get_dist_info()
     if rank == 0:
-        if args.out:
-            print(f'\nwriting results to {args.out}')
-            mmcv.dump(outputs, args.out)
+        if not args.noinference:
+            if args.out:
+                print(f'\nwriting results to {args.out}')
+                mmcv.dump(outputs, args.out)
         kwargs = {} if args.eval_options is None else args.eval_options
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
@@ -209,6 +212,9 @@ def main():
                 eval_kwargs.pop(key, None)
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
             eval_kwargs.update(dict(show=args.show, out_dir=args.show_dir))
+            if args.noinference:
+                print(f'\nloading results from {args.out}')
+                outputs = mmcv.load(args.out)
             print(dataset.evaluate(outputs, **eval_kwargs))
 
 

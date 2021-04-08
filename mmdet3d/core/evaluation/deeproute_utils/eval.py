@@ -27,7 +27,6 @@ def get_thresholds(scores: np.ndarray, num_gt, num_sample_pts=41):
 
 def clean_data(gt_anno, dt_anno, current_class, difficulty):
     CLASS_NAMES = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']
-    MIN_HEIGHT = [40, 25, 25]
     MAX_OCCLUSION = [0, 1, 2]
     MAX_TRUNCATION = [0.15, 0.3, 0.5]
     dc_bboxes, ignored_gt, ignored_dt = [], [], []
@@ -36,21 +35,14 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty):
     num_dt = len(dt_anno['name'])
     num_valid_gt = 0
     for i in range(num_gt):
-        # bbox = gt_anno['bbox'][i]
         gt_name = gt_anno['name'][i].lower()
-        # height = bbox[3] - bbox[1]
         valid_class = -1
         if (gt_name == current_cls_name):
             valid_class = 1
-        # elif (current_cls_name == 'Pedestrian'.lower()
-        #       and 'Person_sitting'.lower() == gt_name):
-        #     valid_class = 0
-        # elif (current_cls_name == 'Car'.lower() and 'Van'.lower() == gt_name):
-        #     valid_class = 0
         ignore = False
-        if ((gt_anno['occluded'][i] > MAX_OCCLUSION[difficulty])
-                or (gt_anno['truncated'][i] > MAX_TRUNCATION[difficulty])):
-        #         or (height <= MIN_HEIGHT[difficulty])):
+        # if ((gt_anno['occluded'][i] > MAX_OCCLUSION[difficulty])
+        #         or (gt_anno['truncated'][i] > MAX_TRUNCATION[difficulty])):
+        if gt_anno['difficulty'][i] != difficulty:
             ignore = True
         if valid_class == 1 and not ignore:
             ignored_gt.append(0)
@@ -59,17 +51,11 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty):
             ignored_gt.append(1)
         else:
             ignored_gt.append(-1)
-    # for i in range(num_gt):
-    #   if gt_anno['name'][i] == 'DontCare':
-    #       dc_bboxes.append(gt_anno['bbox'][i])
     for i in range(num_dt):
         if (dt_anno['name'][i].lower() == current_cls_name):
             valid_class = 1
         else:
             valid_class = -1
-        # height = abs(dt_anno['bbox'][i, 3] - dt_anno['bbox'][i, 1])
-        # if height < MIN_HEIGHT[difficulty]:
-        #     ignored_dt.append(1)
         if valid_class == 1:
             ignored_dt.append(0)
         else:
@@ -436,10 +422,6 @@ def _prepare_data(gt_annos, dt_annos, current_class, difficulty):
             np.zeros((gt_annos[i]['location'].shape[0], 4)), 
             np.zeros(gt_annos[i]['location'].shape[0])[..., np.newaxis], 
             ], 1)
-        # dt_datas = np.concatenate([
-        #     dt_annos[i]['bbox'], dt_annos[i]['alpha'][..., np.newaxis],
-        #     dt_annos[i]['score'][..., np.newaxis]
-        # ], 1)
         dt_datas = np.concatenate([
             np.zeros((dt_annos[i]['score'].shape[0], 4)), np.zeros(dt_annos[i]['score'].shape[0])[..., np.newaxis],
             dt_annos[i]['score'][..., np.newaxis]
@@ -482,6 +464,11 @@ def eval_class(gt_annos,
 
     rets = calculate_iou_partly(dt_annos, gt_annos, metric, num_parts)
     overlaps, parted_overlaps, total_dt_num, total_gt_num = rets
+
+    dets_num = 0
+    for i in range(total_dt_num.shape[0]):
+        dets_num += total_dt_num[i]
+
     N_SAMPLE_PTS = 41
     num_minoverlap = len(min_overlaps)
     num_class = len(current_classes)
@@ -490,7 +477,12 @@ def eval_class(gt_annos,
         [num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS])
     recall = np.zeros(
         [num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS])
-    aos = np.zeros([num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS])
+
+    # thresholds_all = [[[[]]*num_minoverlap]*num_difficulty]*num_class
+    # pr_all = [[[[]]*num_minoverlap]*num_difficulty]*num_class
+    thresholds_all = [[[[] for i in range(num_minoverlap)] for i in range(num_difficulty)] for i in range(num_class)]
+    pr_all = [[[[] for i in range(num_minoverlap)] for i in range(num_difficulty)] for i in range(num_class)]
+    max_det = -1
     for m, current_class in enumerate(current_classes):
         for idx_l, difficulty in enumerate(difficultys):
             rets = _prepare_data(gt_annos, dt_annos, current_class, difficulty)
@@ -513,9 +505,19 @@ def eval_class(gt_annos,
                     tp, fp, fn, similarity, thresholds = rets
                     thresholdss += thresholds.tolist()
                 thresholdss = np.array(thresholdss)
+                
+                # AP 41 threshs && pr
                 thresholds = get_thresholds(thresholdss, total_num_valid_gt)
                 thresholds = np.array(thresholds)
                 pr = np.zeros([len(thresholds), 4])
+
+                # AP 80-100 threshs && pr
+                thresh_num = int(thresholdss.shape[0]*0.4)
+                thresholds_ = thresholdss
+                thresholds_.sort()
+                thresholds_ = thresholds_[:thresh_num][::-1]
+                pr_ = np.zeros([len(thresholds_), 4])
+
                 idx = 0
                 for j, num_part in enumerate(split_parts):
                     gt_datas_part = np.concatenate(
@@ -528,6 +530,8 @@ def eval_class(gt_annos,
                         ignored_dets[idx:idx + num_part], 0)
                     ignored_gts_part = np.concatenate(
                         ignored_gts[idx:idx + num_part], 0)
+
+                    # 41 AP
                     fused_compute_statistics(
                         parted_overlaps[j],
                         pr,
@@ -543,25 +547,45 @@ def eval_class(gt_annos,
                         min_overlap=min_overlap,
                         thresholds=thresholds,
                         compute_aos=compute_aos)
+
+                    # 80% recall
+                    fused_compute_statistics(
+                        parted_overlaps[j],
+                        pr_,
+                        total_gt_num[idx:idx + num_part],
+                        total_dt_num[idx:idx + num_part],
+                        total_dc_num[idx:idx + num_part],
+                        gt_datas_part,
+                        dt_datas_part,
+                        dc_datas_part,
+                        ignored_gts_part,
+                        ignored_dets_part,
+                        metric,
+                        min_overlap=min_overlap,
+                        thresholds=thresholds_,
+                        compute_aos=compute_aos)
+
                     idx += num_part
+
+                if thresholds_.shape[0] > max_det:
+                    max_det = thresholds_.shape[0]
+                thresholds_all[m][idx_l][k].append(thresholds_)
+                pr_all[m][idx_l][k].append(pr_)
                 for i in range(len(thresholds)):
                     recall[m, idx_l, k, i] = pr[i, 0] / (pr[i, 0] + pr[i, 2])
                     precision[m, idx_l, k, i] = pr[i, 0] / (
                         pr[i, 0] + pr[i, 1])
-                    if compute_aos:
-                        aos[m, idx_l, k, i] = pr[i, 3] / (pr[i, 0] + pr[i, 1])
                 for i in range(len(thresholds)):
                     precision[m, idx_l, k, i] = np.max(
                         precision[m, idx_l, k, i:], axis=-1)
                     recall[m, idx_l, k, i] = np.max(
                         recall[m, idx_l, k, i:], axis=-1)
-                    if compute_aos:
-                        aos[m, idx_l, k, i] = np.max(
-                            aos[m, idx_l, k, i:], axis=-1)
     ret_dict = {
         'recall': recall,
         'precision': precision,
-        'orientation': aos,
+        'thresholds': thresholds_all,
+        'pr': pr_all, # pr0=tp, pr1=fp, pr2=fn
+        'dim': [num_class, num_difficulty, num_minoverlap, max_det]
     }
 
     # clean temp variables
@@ -587,42 +611,51 @@ def print_str(value, *arg, sstream=None):
     print(value, *arg, file=sstream)
     return sstream.getvalue()
 
+def get_curve_ap(thresholds, prs, dims):
+    result_fp = np.zeros((dims[0], dims[1], dims[2], dims[3]))
+    result_fn = np.zeros((dims[0], dims[1], dims[2], dims[3]))
+    result_recall = np.zeros((dims[0], dims[1], dims[2], dims[3]))
+    result_precision = np.zeros((dims[0], dims[1], dims[2], dims[3]))
+    result_thresh = np.zeros((dims[0], dims[1], dims[2], dims[3]))
+    for i in range(dims[0]):
+        for j in range(dims[1]):
+            for k in range(dims[2]):
+                result_thresh[i, j, k][:len(thresholds[i][j][k][0])] = thresholds[i][j][k][0][:]
+                result_fp[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 1]
+                result_fn[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 2]
+                result_recall[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 0] / (prs[i][j][k][0][:, 0] + prs[i][j][k][0][:, 2])
+                result_precision[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 0] / (prs[i][j][k][0][:, 0] + prs[i][j][k][0][:, 1])
+
+
+    results = {
+                'thresh': result_thresh,
+                'fp': result_fp,
+                'fn': result_fn,
+                'recall': result_recall,
+                'precision':result_precision,
+                }
+    return results
 
 def do_eval(gt_annos,
             dt_annos,
             current_classes,
             min_overlaps,
             eval_types=['bev', '3d']):
-    # min_overlaps: [num_minoverlap, metric, num_class]
     difficultys = [0, 1, 2]
-    mAP_bbox = None
-    mAP_aos = None
-    # if 'bbox' in eval_types:
-    #     ret = eval_class(
-    #         gt_annos,
-    #         dt_annos,
-    #         current_classes,
-    #         difficultys,
-    #         0,
-    #         min_overlaps,
-    #         compute_aos=('aos' in eval_types))
-    #     # ret: [num_class, num_diff, num_minoverlap, num_sample_points]
-    #     mAP_bbox = get_mAP(ret['precision'])
-    #     if 'aos' in eval_types:
-    #         mAP_aos = get_mAP(ret['orientation'])
-
     mAP_bev = None
     if 'bev' in eval_types:
         ret, overlaps_bev = eval_class(gt_annos, dt_annos, current_classes, difficultys, 1,
                          min_overlaps)
         mAP_bev = get_mAP(ret['precision'])
+        curve_res_bev = get_curve_ap(ret['thresholds'], ret['pr'], ret['dim'])
 
     mAP_3d = None
     if '3d' in eval_types:
         ret, overlaps_3d = eval_class(gt_annos, dt_annos, current_classes, difficultys, 2,
                          min_overlaps)
         mAP_3d = get_mAP(ret['precision'])
-    return mAP_bbox, mAP_bev, mAP_3d, mAP_aos, overlaps_3d
+        curve_res_3d = get_curve_ap(ret['thresholds'], ret['pr'], ret['dim'])
+    return mAP_bev, mAP_3d, curve_res_bev, curve_res_3d, overlaps_3d
 
 
 def do_coco_style_eval(gt_annos, dt_annos, current_classes, overlap_ranges,
@@ -648,20 +681,25 @@ def gather_results(gt_annos,
                     overlaps,
                     min_overlaps):
     CLASS_NAMES = {'PEDESTRIAN':0, 'CYCLIST':1, 'CAR':2, 'TRUCK':3, 'BUS':4}
-    results = {}
+    results = []
     for i in range(min_overlaps.shape[0]):
-        results['level_%s'%i] = []
+        results.append([])
         
     for gts, dts, ious in zip(gt_annos, dt_annos, overlaps):
         if not ious.any():
             continue
         max_ious, inds = torch.tensor(ious).max(dim=1)
-        inds_set = {}
-        for i, idx in enumerate(inds):
-            if int(idx) not in inds_set:
-                inds_set[int(idx)] = []
-            inds_set[int(idx)].append(i)
         for i in range(min_overlaps.shape[0]):
+
+            # set inds
+            inds_set = {}
+            inds_table = set()
+            for dt_idx, gt_idx in enumerate(inds):
+                if int(gt_idx) not in inds_set:
+                    inds_set[int(gt_idx)] = []
+                inds_set[int(gt_idx)].append(dt_idx)
+                inds_table.add(dt_idx)
+
             frame_res = []
             for idx, cls in enumerate(gts['name']):
                 if cls not in CLASS_NAMES:
@@ -671,24 +709,57 @@ def gather_results(gt_annos,
                                     'name':gts['name'][idx],
                                     'dimensions':gts['dimensions'][idx],
                                     'location':gts['location'][idx],
-                                    'rotation_y':gts['rotation_y'][idx],
+                                    'rotation_y':np.array([gts['rotation_y'][idx]]),
+                                    'difficulty':np.array([gts['difficulty'][idx]]),
                                     },
                         'dts':[],
+                        'fps':[],
+                        'fns':[],
                         }
+                # recall
                 if idx in inds_set:
                     for j in inds_set[idx]:
-                        if max_ious[j] > min_overlaps[i][CLASS_NAMES[cls]]:
+                        if max_ious[j] > min_overlaps[i][CLASS_NAMES[cls]] and gts['name'][idx] == dts['name'][j]:
                             dt = {
                                  'name':dts['name'][j],
                                  'dimensions':dts['dimensions'][j],
                                  'location':dts['location'][j],
-                                 'rotation_y':dts['rotation_y'][j],
-                                 'score':dts['score'][j],
-                                 'iou':max_ious[j],
+                                 'rotation_y':np.array([dts['rotation_y'][j]]),
+                                 'score':np.array([dts['score'][j]]),
+                                 'iou':np.array([max_ious[j]]),
                                 }
                             res['dts'].append(dt)
+                            if j in inds_table:
+                                inds_table.discard(j)
+                        else:
+                            fn = {
+                                 'name':gts['name'][idx],
+                                 'dimensions':gts['dimensions'][idx],
+                                 'location':gts['location'][idx],
+                                 'rotation_y':np.array([gts['rotation_y'][idx]]),
+                                }
+                            res['fns'].append(fn)
+                # fn
+                else :
+                    fn = {
+                         'name':gts['name'][idx],
+                         'dimensions':gts['dimensions'][idx],
+                         'location':gts['location'][idx],
+                         'rotation_y':np.array([gts['rotation_y'][idx]]),
+                        }
+                    res['fns'].append(fn)
                 frame_res.append(res)
-            results['level_%s'%i].append(frame_res)
+            for j in inds_table:
+                fp = {
+                     'name':dts['name'][j],
+                     'dimensions':dts['dimensions'][j],
+                     'location':dts['location'][j],
+                     'rotation_y':np.array([dts['rotation_y'][j]]),
+                     'score':np.array([dts['score'][j]]),
+                     'iou':np.array([max_ious[j]]),
+                    }
+                res['fps'].append(fp)
+            results[i].append(frame_res)
     return results
 
 def reform_data(res):
@@ -731,30 +802,30 @@ def extra_eval(gt_annos,
                 current_classes, 
                 min_overlaps=np.array([
                               [0.5, 0.5, 0.7, 0.7, 0.7],
-                              [0.3, 0.3, 0.5, 0.5, 0.5],
                              ])):
 
     results = gather_results(gt_annos, dt_annos, overlaps, min_overlaps)
-    eval_res = reform_data(results)
-    extra_res = []
-    for level in eval_res:
-        level_res = {}
-        for eval_key in eval_res[level]:
-            level_res[eval_key] = {}
-            for idx, cls_err in enumerate(eval_res[level][eval_key]):
-                level_res[eval_key][idx] = []
-                if cls_err == []:
-                    continue
-                cls_res = np.sum(np.stack(cls_err, axis=0), axis=0)/len(cls_err)
-                level_res[eval_key][idx] = cls_res
-        extra_res.append(level_res)
-    return extra_res, eval_res
+    return results
+    # eval_res = reform_data(results)
+    # extra_res = []
+    # for level in eval_res:
+    #     level_res = {}
+    #     for eval_key in eval_res[level]:
+    #         level_res[eval_key] = {}
+    #         for idx, cls_err in enumerate(eval_res[level][eval_key]):
+    #             level_res[eval_key][idx] = []
+    #             if cls_err == []:
+    #                 continue
+    #             cls_res = np.sum(np.stack(cls_err, axis=0), axis=0)/len(cls_err)
+    #             level_res[eval_key][idx] = cls_res
+    #     extra_res.append(level_res)
+    # return extra_res, eval_res
 
 def deeproute_eval(gt_annos,
                dt_annos,
                current_classes,
                eval_types=['bev', '3d'], 
-               extra_flag=True):
+               extra_flag=False):
     """Deeproute evaluation.
 
     Args:
@@ -770,19 +841,14 @@ def deeproute_eval(gt_annos,
     assert len(eval_types) > 0, 'must contain at least one evaluation type'
     if 'aos' in eval_types:
         assert 'bbox' in eval_types, 'must evaluate bbox when evaluating aos'
-    # overlap_0_7 = np.array([[0.7, 0.5, 0.5, 0.7,
-    #                          0.5], [0.7, 0.5, 0.5, 0.7, 0.5],
-    #                         [0.7, 0.5, 0.5, 0.7, 0.5]])
-    # overlap_0_5 = np.array([[0.7, 0.5, 0.5, 0.7, 0.5],
-    #                         [0.5, 0.25, 0.25, 0.5, 0.25],
-    #                         [0.5, 0.25, 0.25, 0.5, 0.25]])
     overlap_0_7 = np.array([[0.5, 0.5, 0.7, 0.7, 0.7], 
                             [0.5, 0.5, 0.7, 0.7, 0.7],
                             [0.5, 0.5, 0.7, 0.7, 0.7]])
     overlap_0_5 = np.array([[0.3, 0.3, 0.5, 0.5, 0.5],
                             [0.3, 0.3, 0.5, 0.5, 0.5],
                             [0.3, 0.3, 0.5, 0.5, 0.5]])
-    min_overlaps = np.stack([overlap_0_7, overlap_0_5], axis=0)  # [2, 3, 5]
+    #min_overlaps = np.stack([overlap_0_7, overlap_0_5], axis=0)  # [2, 3, 5]
+    min_overlaps = np.stack([overlap_0_5], axis=0)  # [2, 3, 5]
     class_to_name = {
         0: 'PEDESTRIAN',
         1: 'CYCLIST',
@@ -812,29 +878,15 @@ def deeproute_eval(gt_annos,
     current_classes = current_classes_int
     min_overlaps = min_overlaps[:, :, current_classes]
     result = ''
-    # check whether alpha is valid
-    compute_aos = False
-    pred_alpha = False
-    valid_alpha_gt = False
-    # for anno in dt_annos:
-    #     if anno['alpha'].shape[0] != 0:
-    #         pred_alpha = True
-    #         break
-    # for anno in gt_annos:
-    #     if anno['alpha'][0] != -10:
-    #         valid_alpha_gt = True
-    #         break
-    compute_aos = (pred_alpha and valid_alpha_gt)
-    if compute_aos:
-        eval_types.append('aos')
 
-    mAPbbox, mAPbev, mAP3d, mAPaos, overlaps_3d = do_eval(gt_annos, dt_annos,
+    mAPbev, mAP3d, curve_res_bev, curve_res_3d, overlaps_3d = do_eval(gt_annos, dt_annos,
                                              current_classes, min_overlaps,
                                              eval_types)
-    extra_res, eval_res = extra_eval(gt_annos, dt_annos, overlaps_3d, current_classes)
+    extra_res = None
+    extra_res = extra_eval(gt_annos, dt_annos, overlaps_3d, current_classes)
 
     ret_dict = {}
-    difficulty = ['easy', 'moderate', 'hard']
+    difficulty = ['key_area0', 'key_area1', 'key_area2']
     for j, curcls in enumerate(current_classes):
         # mAP threshold array: [num_minoverlap, metric, class]
         # mAP result: [num_class, num_diff, num_minoverlap]
@@ -843,9 +895,6 @@ def deeproute_eval(gt_annos,
             # prepare results for print
             result += ('{} AP@{:.2f}, {:.2f}, {:.2f}:\n'.format(
                 curcls_name, *min_overlaps[i, :, j]))
-            if mAPbbox is not None:
-                result += 'bbox AP:{:.4f}, {:.4f}, {:.4f}\n'.format(
-                    *mAPbbox[j, :, i])
             if mAPbev is not None:
                 result += 'bev  AP:{:.4f}, {:.4f}, {:.4f}\n'.format(
                     *mAPbev[j, :, i])
@@ -853,46 +902,22 @@ def deeproute_eval(gt_annos,
                 result += '3d   AP:{:.4f}, {:.4f}, {:.4f}\n'.format(
                     *mAP3d[j, :, i])
 
-            if compute_aos:
-                result += 'aos  AP:{:.2f}, {:.2f}, {:.2f}\n'.format(
-                    *mAPaos[j, :, i])
-
             if extra_flag:
                 result += 'deminsions ERR:{:.4f}, {:.4f}, {:.4f}\n'.format(*extra_res[i]['dimensions'][j][:])
                 result += 'location   ERR:{:.4f}, {:.4f}, {:.4f}\n'.format(*extra_res[i]['location'][j][:])
                 result += 'ratation_y ERR:{:.4f}\n'.format(extra_res[i]['rotation_y'][j])
                 result += 'iou        AVE:{:.4f}\n'.format(extra_res[i]['iou'][j])
 
-            # prepare results for logger
-            for idx in range(3):
-                if i == 0:
-                    postfix = f'{difficulty[idx]}_strict'
-                else:
-                    postfix = f'{difficulty[idx]}_loose'
-                prefix = f'Deeproute/{curcls_name}'
-                if mAP3d is not None:
-                    ret_dict[f'{prefix}_3D_{postfix}'] = mAP3d[j, idx, i]
-                if mAPbev is not None:
-                    ret_dict[f'{prefix}_BEV_{postfix}'] = mAPbev[j, idx, i]
-                if mAPbbox is not None:
-                    ret_dict[f'{prefix}_2D_{postfix}'] = mAPbbox[j, idx, i]
-
     # calculate mAP over all classes if there are multiple classes
     if len(current_classes) > 1:
         # prepare results for print
         result += ('\nOverall AP@{}, {}, {}:\n'.format(*difficulty))
-        if mAPbbox is not None:
-            mAPbbox = mAPbbox.mean(axis=0)
-            result += 'bbox AP:{:.4f}, {:.4f}, {:.4f}\n'.format(*mAPbbox[:, 0])
         if mAPbev is not None:
             mAPbev = mAPbev.mean(axis=0)
             result += 'bev  AP:{:.4f}, {:.4f}, {:.4f}\n'.format(*mAPbev[:, 0])
         if mAP3d is not None:
             mAP3d = mAP3d.mean(axis=0)
             result += '3d   AP:{:.4f}, {:.4f}, {:.4f}\n'.format(*mAP3d[:, 0])
-        if compute_aos:
-            mAPaos = mAPaos.mean(axis=0)
-            result += 'aos  AP:{:.2f}, {:.2f}, {:.2f}\n'.format(*mAPaos[:, 0])
 
         # prepare results for logger
         for idx in range(3):
@@ -901,10 +926,8 @@ def deeproute_eval(gt_annos,
                 ret_dict[f'Deeproute/Overall_3D_{postfix}'] = mAP3d[idx, 0]
             if mAPbev is not None:
                 ret_dict[f'Deeproute/Overall_BEV_{postfix}'] = mAPbev[idx, 0]
-            if mAPbbox is not None:
-                ret_dict[f'Deeproute/Overall_2D_{postfix}'] = mAPbbox[idx, 0]
 
-    return result, ret_dict, eval_res
+    return result, ret_dict, curve_res_bev, curve_res_3d, extra_res
 
 
 def deeproute_eval_coco_style(gt_annos, dt_annos, current_classes):

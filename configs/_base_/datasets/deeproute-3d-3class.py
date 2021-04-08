@@ -2,7 +2,8 @@
 dataset_type = 'DeeprouteDataset'
 data_root = 'data/deeproute/'
 class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']
-point_cloud_range = [-20.4, -40, -3, 70.4, 40, 1]
+# point_cloud_range = [-20.4, -40, -3, 70.4, 40, 1]
+point_cloud_range = [-74.88, -74.88, -4, 74.88, 74.88, 4]
 input_modality = dict(use_lidar=True, use_camera=False)
 db_sampler = dict(
     data_root=data_root,

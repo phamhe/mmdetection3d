@@ -111,10 +111,36 @@ def show_result(points, gt_bboxes, pred_bboxes, out_dir, filename, show=True):
     #     _write_oriented_bbox(pred_bboxes,
     #                          osp.join(result_path, f'{filename}_pred.ply'))
 
+def show_results(points, allbboxes, colors, out_dir, filename, show=True):
+    """Convert results into format that is directly readable for meshlab.
+
+    Args:
+        points (np.ndarray): Points.
+        gt_bboxes (np.ndarray): Ground truth boxes.
+        pred_bboxes (np.ndarray): Predicted boxes.
+        out_dir (str): Path of output directory
+        filename (str): Filename of the current frame.
+        show (bool): Visualize the results online.
+    """
+    from .open3d_vis import Visualizer
+
+    if show:
+        vis = Visualizer(points)
+        for idx, bboxes in enumerate(allbboxes):
+            vis.add_bboxes(bbox3d=bboxes, bbox_color=colors[idx])
+        vis.show()
+
 def show_result_bev(points, gt_bboxes, dt_bboxes, gt_labels=None, dt_labels=None, show=True):
     from .open3d_vis import Visualizer_bev
     if show:
         vis = Visualizer_bev(points, gt_bboxes, dt_bboxes,
                             gt_labels, dt_labels)
+        vis.show()
+def show_results_bev(points, allbboxes, colors, points_range, labels=None, show=True):
+    from .open3d_vis import Visualizer_bev
+    if show:
+        vis = Visualizer_bev(points, points_range)
+        for idx, bboxes in enumerate(allbboxes):
+            vis.add_bboxes(bboxes, colors[idx], labels)
         vis.show()
         

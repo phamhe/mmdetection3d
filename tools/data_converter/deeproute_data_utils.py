@@ -180,30 +180,11 @@ def get_deeproute_image_info(path,
 
     return list(image_infos)
 
-def kitti_anno_to_label_file(annos, folder):
-    folder = Path(folder)
-    for anno in annos:
-        image_idx = anno['metadata']['image_idx']
-        label_lines = []
-        for j in range(anno['bbox'].shape[0]):
-            label_dict = {
-                'name': anno['name'][j],
-                'alpha': anno['alpha'][j],
-                'bbox': anno['bbox'][j],
-                'location': anno['location'][j],
-                'dimensions': anno['dimensions'][j],
-                'rotation_y': anno['rotation_y'][j],
-                'score': anno['score'][j],
-            }
-            label_line = kitti_result_line(label_dict)
-            label_lines.append(label_line)
-        label_file = folder / f'{get_image_index_str(image_idx)}.txt'
-        label_str = '\n'.join(label_lines)
-        with open(label_file, 'w') as f:
-            f.write(label_str)
-
-
-def add_difficulty_to_annos(info):
+def add_difficulty_to_annos(info, 
+                            key_area=[
+                                    [20, 40],
+                                    [10, 20]
+                                     ]):
     min_height = [40, 25,
                   25]  # minimum height for evaluated groundtruth/detections
     max_occlusion = [
@@ -214,47 +195,40 @@ def add_difficulty_to_annos(info):
     ]  # maximum truncation level of the groundtruth used for evaluation
     annos = info['annos']
     dims = annos['dimensions']  # lhw format
-    # bbox = annos['bbox']
-    # height = bbox[:, 3] - bbox[:, 1]
+    loc = annos['location']
     occlusion = annos['occluded']
     truncation = annos['truncated']
     hard_type = annos['hard_type']
     diff = []
-    easy_mask = np.ones((len(dims), ), dtype=np.bool)
-    moderate_mask = np.ones((len(dims), ), dtype=np.bool)
-    hard_mask = np.ones((len(dims), ), dtype=np.bool)
-    i = 0
-    #for h, o, t in zip(height, occlusion, truncation):
-    for o, t , h in zip(occlusion, truncation, hard_type):
-        # if o > max_occlusion[0] or t > max_trunc[0]:
-        #     easy_mask[i] = False
-        # if o > max_occlusion[1] or t > max_trunc[1]:
-        #     moderate_mask[i] = False
-        # if o > max_occlusion[2] or t > max_trunc[2]:
-        #     hard_mask[i] = False
-        if h == 'easy':
-            moderate_mask[i] = False
-            hard_mask[i] = False
-        elif h == 'hard':
-            easy_mask[i] = False
-            moderate_mask[i] = False
-        i += 1
-    is_easy = easy_mask
-    is_moderate = np.logical_xor(easy_mask, moderate_mask)
-    is_hard = np.logical_xor(hard_mask, moderate_mask)
 
-    for i in range(len(dims)):
-        if is_easy[i]:
-            diff.append(0)
-        elif is_moderate[i]:
-            diff.append(1)
-        elif is_hard[i]:
-            diff.append(2)
+    key_area_nums = len(key_area[0])
+    area_mask = np.zeros((len(dims),))
+
+    i = 0
+    #TODO remove hardcode keyarea
+    for i in range(len(loc)):
+        if (abs(loc[i][0]) <= key_area[0][0] and 
+                abs(loc[i][1]) <= key_area[1][0]) or \
+                (abs(loc[i][0]) <= key_area[0][0] and 
+                abs(loc[i][1]) <= key_area[1][1]) or \
+                (abs(loc[i][0]) <= key_area[0][1] and
+                abs(loc[i][1]) <= key_area[1][0]):
+            continue
+        elif abs(loc[i][0]) <= key_area[0][1] or \
+                abs(loc[i][1]) <= key_area[1][1]:
+            area_mask[i] = 1
         else:
-            diff.append(-1)
+            area_mask[i] = 2
+
+    for i in range(len(loc)):
+        if area_mask[i]==0:
+            diff.append(0)
+        elif area_mask[i]==1:
+            diff.append(1)
+        else:
+            diff.append(2)
     annos['difficulty'] = np.array(diff, np.int32)
     return diff
-
 
 def kitti_result_line(result_dict, precision=4):
     prec_float = '{' + ':.{}f'.format(precision) + '}'

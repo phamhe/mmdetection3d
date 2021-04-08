@@ -6,8 +6,8 @@ _base_ = [
     '../_base_/default_runtime.py'
 ]
 
-# point_cloud_range = [-29.12, -39.68, -3, 69.12, 39.68, 3]
 point_cloud_range = [-74.88, -74.88, -4, 74.88, 74.88, 4]
+point_cloud_range_eval = [-40, -20, -4, 40, 20, 4]
 # dataset settings
 data_root = 'data/deeproute/'
 class_names = ['PEDESTRIAN', 'CYCLIST', 'CAR', 'TRUCK', 'BUS']

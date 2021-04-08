@@ -8,7 +8,7 @@ from mmcv.utils import print_log
 from os import path as osp
 
 from mmdet.datasets import DATASETS
-from ..core import show_result
+from ..core import show_result, show_results, show_results_bev
 from ..core.bbox import (Box3DMode, LiDARInstance3DBoxes, Coord3DMode)
 from .custom_3d import Custom3DDataset
 
@@ -60,7 +60,7 @@ class DeeprouteDataset(Custom3DDataset):
                  box_type_3d='LiDAR',
                  filter_empty_gt=True,
                  test_mode=False,
-                 pcd_limit_range=[-20.4, -40, -3, 70.4, 40, 0.0]):
+                 pcd_limit_range=[-74.88, -74.88, -4, 74.88, 74.88, 4]):
         super().__init__(
             data_root=data_root,
             ann_file=ann_file,
@@ -278,69 +278,127 @@ class DeeprouteDataset(Custom3DDataset):
                                                   submission_prefix)
 
         return result_files, tmp_dir
-
-    def plot_extra(self, eval_res, out_dir, cls_group=[[0, 1], [2, 3, 4]]):
+    def plot_extra(self, x, y, prefix, postfix, out_dir):
         color = {
                 0:['red', 'darkred', 'lightcoral'],
                 1:['green', 'darkgreen', 'lightgreen'],
                 2:['blue', 'darkblue', 'royalblue'],
+                # 3:['cyan', 'darkcyan', 'darkslategray'],
+                # 4:['']
                 }
+        cls_name = {
+                    0: 'ped',
+                    1: 'cyc',
+                    2: 'car', 3: 'truck', 4: 'bus',
+                    }
+        iou_name = [
+                    [0.3, 0.5],
+                    [0.3, 0.5],
+                    [0.5, 0.7],
+                    [0.5, 0.7],
+                    [0.5, 0.7]
+                    ]
         plt_ptr = 0
-        group_ptr = 0
-        for level in eval_res:
-            eval_res_level = eval_res[level]
-            for eval_key in eval_res_level:
-                for idx, cls_err_all in enumerate(eval_res_level[eval_key]):
-                    if idx not in cls_group[group_ptr]:
-                        group_ptr += 1
-                        while group_ptr > len(cls_group) - 1:
-                            group_ptr %= len(cls_group)
-                        plt_ptr += 1
-                        plt.figure(plt_ptr)
+        for i_cls in range(x.shape[0]):
+            plt_ptr += 1
+            plt.figure(plt_ptr)
+            for i_ka in range(x.shape[1]):
+                for i_iou in range(x.shape[2]):
+                    fx = x[i_cls, i_ka, i_iou, :]
+                    fy = y[i_cls, i_ka, i_iou, :]
+                    inds = fx != 0
+                    fx = fx[inds]
+                    fy = fy[inds]
+                    fx, inds = np.unique(fx, return_index=True)
+                    fy = fy[inds]
+                    if not fx.any() or fx.shape[0]<3:
+                        continue
+                    li = interp1d(fx, fy, kind='quadratic')
+                    fx_new = np.linspace(fx[0], fx[-1], 500)
+                    fy_new = li(fx_new)
 
-                    cls_err_all = np.stack(cls_err_all, axis=0)
-                    cls_err_all = np.sort(cls_err_all, 0)
-                    cls_err_min_all = cls_err_all[0]
-                    cls_err_max_all = cls_err_all[-1]
-                    axis_x_all = np.linspace(cls_err_min_all, cls_err_max_all, 10)
-                    if len(axis_x_all.shape) > 1:
-                        dim = axis_x_all.shape[1]
-                    else:
-                        dim = 1
-                    for i in range(dim):
-                        cls_err = cls_err_all
-                        axis_x = axis_x_all
-                        cls_err_min = cls_err_min_all
-                        cls_err_max = cls_err_max_all
-                        if len(axis_x_all.shape) > 1:
-                            cls_err = cls_err_all[:, i]
-                            axis_x = axis_x_all[:, i]
-                            cls_err_min = cls_err_min_all[i]
-                            cls_err_max = cls_err_max_all[i]
-                        axis_y = np.zeros(axis_x.shape[0])
-
-                        ptr = 0
-                        count = 0
-                        for j, err in enumerate(cls_err):
-                            count += 1
-                            if err >= axis_x[ptr]:
-                                axis_y[ptr] = count
-                                ptr += 1
-                                count = 0
-
-                        li = interp1d(axis_x, axis_y, kind='cubic')
-                        axis_x_new = np.linspace(cls_err_min, cls_err_max, 1000)
-                        axis_y_new = li(axis_x_new)
-                        plt.plot(axis_x_new, axis_y_new, 
-                                color=color[idx%(
-                                        len(cls_group[group_ptr]))][i],
-                                 label='cls_%s_%s_%s_%s'%(idx, level, eval_key, i))
-                    plt.xlabel(eval_key)
+                    label='%s_ka%s_iou%s_%s'%(cls_name[i_cls], 
+                                               i_ka, iou_name[i_cls][i_iou], 
+                                               postfix)
+                    plt.plot(fx_new, fy_new, 
+                             color=color[i_ka][i_iou],
+                             label=label) 
+                    plt.xlabel(prefix)
                     plt.ylabel('times')
-                    plt.title('cls_%s_%s_%s'%(idx, level, eval_key))
+                    plt.title(label)
                     plt.legend()
                     # plt.show()
-                    plt.savefig(os.path.join(out_dir, 'cls_%s_%s_%s'%(idx, level, eval_key)))
+            name ='%s_%s_%s'%(cls_name[i_cls], prefix, postfix)
+            plt.savefig(os.path.join(out_dir, name))
+            plt.close()
+                    
+    # def plot_extra(self, eval_res, out_dir, cls_group=[[0, 1], [2, 3, 4]]):
+    #     color = {
+    #             0:['red', 'darkred', 'lightcoral'],
+    #             1:['green', 'darkgreen', 'lightgreen'],
+    #             2:['blue', 'darkblue', 'royalblue'],
+    #             }
+    #     plt_ptr = 0
+    #     group_ptr = 0
+    #     for level in eval_res:
+    #         eval_res_level = eval_res[level]
+    #         for eval_key in eval_res_level:
+    #             for idx, cls_err_all in enumerate(eval_res_level[eval_key]):
+    #                 if idx not in cls_group[group_ptr]:
+    #                     group_ptr += 1
+    #                     while group_ptr > len(cls_group) - 1:
+    #                         group_ptr %= len(cls_group)
+    #                     plt_ptr += 1
+    #                     plt.figure(plt_ptr)
+
+    #                 cls_err_all = np.stack(cls_err_all, axis=0)
+    #                 cls_err_all = np.sort(cls_err_all, 0)
+    #                 cls_err_min_all = cls_err_all[0]
+    #                 cls_err_max_all = cls_err_all[-1]
+    #                 axis_x_all = np.linspace(cls_err_min_all, cls_err_max_all, 60)
+    #                 if len(axis_x_all.shape) > 1:
+    #                     dim = axis_x_all.shape[1]
+    #                 else:
+    #                     dim = 1
+    #                 for i in range(dim):
+    #                     cls_err = cls_err_all
+    #                     axis_x = axis_x_all
+    #                     cls_err_min = cls_err_min_all
+    #                     cls_err_max = cls_err_max_all
+    #                     if len(axis_x_all.shape) > 1:
+    #                         cls_err = cls_err_all[:, i]
+    #                         axis_x = axis_x_all[:, i]
+    #                         cls_err_min = cls_err_min_all[i]
+    #                         cls_err_max = cls_err_max_all[i]
+    #                     axis_y = np.zeros(axis_x.shape[0])
+
+    #                     ptr = 0
+    #                     count = 0
+    #                     for j, err in enumerate(cls_err):
+    #                         count += 1
+    #                         if err >= axis_x[ptr]:
+    #                             axis_y[ptr] = count
+    #                             ptr += 1
+    #                             count = 0
+
+    #                     li = interp1d(axis_x, axis_y, kind='quadratic')
+    #                     axis_x_new = np.linspace(cls_err_min, cls_err_max, 1000)
+    #                     axis_y_new = li(axis_x_new)
+    #                     plt.plot(axis_x_new, axis_y_new, 
+    #                             color=color[idx%(
+    #                                     len(cls_group[group_ptr]))][i],
+    #                              label='cls_%s_%s_%s_%s'%(idx, level, eval_key, i))
+    #                     # plt.plot(axis_x, axis_y, 'o',
+    #                     #         color=color[idx%(
+    #                     #                 len(cls_group[group_ptr]))][i],
+    #                     #          label='cls_%s_%s_%s_%s'%(idx, level, eval_key, i))
+    #                 plt.xlabel(eval_key)
+    #                 plt.ylabel('times')
+    #                 plt.title('cls_%s_%s_%s'%(idx, level, eval_key))
+    #                 plt.legend()
+    #                 # plt.show()
+    #                 plt.savefig(os.path.join(out_dir, 'cls_%s_%s_%s'%(idx, level, eval_key)))
+    #                 plt.close()
 
     def evaluate(self,
                  results,
@@ -378,28 +436,39 @@ class DeeprouteDataset(Custom3DDataset):
             ap_dict = dict()
             for name, result_files_ in result_files.items():
                 eval_types = ['bev', '3d']
-                ap_result_str, ap_dict_, eval_res = deeproute_eval(
+                ap_result_str, ap_dict_, curve_res_bev, curve_res_3d, extra_res = deeproute_eval(
                     gt_annos,
                     result_files_,
                     self.CLASSES,
                     eval_types=eval_types)
-                self.plot_extra(eval_res, out_dir)
+                # self.plot_extra(curve_res_3d['recall'], 
+                #                 curve_res_3d['fp'], 
+                #                 'recall', 'fp_3d', 
+                #                 out_dir)
+                # self.plot_extra(curve_res_3d['recall'], 
+                #                 curve_res_3d['fn'], 
+                #                 'recall', 'fn_3d', 
+                #                 out_dir)
+                # self.plot_extra(curve_res_3d['thresh'], 
+                #                 curve_res_3d['precision'], 
+                #                 'thresh', 'precision', 
+                #                 out_dir)
+                self.plot_extra(curve_res_3d['thresh'], 
+                                curve_res_3d['recall'], 
+                                'thresh', 'recall', 
+                                out_dir)
+
                 for ap_type, ap in ap_dict_.items():
                     ap_dict[f'{name}/{ap_type}'] = float('{:.4f}'.format(ap))
 
                 print_log(
                     f'Results of {name}:\n' + ap_result_str, logger=logger)
 
-        else:
-            eval_types = ['bev', '3d']
-            ap_result_str, ap_dict, eval_res = deeproute_eval(gt_annos, result_files,
-                                                self.CLASSES, eval_types = ['bev', '3d'])
-            print_log('\n' + ap_result_str, logger=logger)
-
         if tmp_dir is not None:
             tmp_dir.cleanup()
         if show:
-            self.show(results, out_dir)
+            # show_inds = self.get_show_inds(extra_res)
+            self.show(results, out_dir, extra_res, show_inds)
         return ap_dict
 
     def bbox2result_deeproute(self,
@@ -559,7 +628,7 @@ class DeeprouteDataset(Custom3DDataset):
                 sample_idx=sample_idx,
             )
 
-    def show(self, results, out_dir, show=True):
+    def show(self, results, out_dir, extra_res, show=True):
         """Results visualization.
 
         Args:
@@ -568,22 +637,56 @@ class DeeprouteDataset(Custom3DDataset):
             show (bool): Visualize the results online.
         """
         assert out_dir is not None, 'Expect out_dir, got none.'
+        color_map = {
+                    'gt_annos':(0, 255, 0),
+                    'dts':(0, 0, 255),
+                    'fns':(255, 153, 0),
+                    'fps':(255, 0, 0)
+                    }
+
         for i, result in enumerate(results):
             example = self.prepare_test_data(i)
             data_info = self.data_infos[i]
             pts_path = data_info['point_cloud']['velodyne_path']
             file_name = osp.split(pts_path)[-1].split('.')[0]
-            # for now we convert points into depth mode
             points = example['points'][0]._data.numpy()
-            # points = Coord3DMode.convert_point(points, Coord3DMode.LIDAR,
-            #                                    Coord3DMode.DEPTH)
             gt_bboxes = self.get_ann_info(i)['gt_bboxes_3d'].tensor
-            # gt_bboxes = Box3DMode.convert(gt_bboxes, Box3DMode.LIDAR,
-            #                               Box3DMode.DEPTH)
+
+            # frame in res
             if 'pts_bbox' in result:
                 result = result['pts_bbox']
             pred_bboxes = result['boxes_3d'].tensor.numpy()
-            # pred_bboxes = Box3DMode.convert(pred_bboxes, Box3DMode.LIDAR,
-            #                                 Box3DMode.DEPTH)
-            show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name,
-                        show)
+            # show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name,
+            #             show)
+
+            # frame in extra_res
+            for j in range(len(extra_res)):
+                frame_extra = extra_res[j][i]
+                allbboxes = []
+                colors = []
+                keys = frame_extra[0].keys()
+                bboxes_dict = {key:np.zeros((1, 7)) for key in keys}
+
+                # res in frame
+                for res in frame_extra:
+                    for key in keys:
+                        infos = res[key]
+                        if isinstance(infos, list):
+                            for info in infos:
+                                bbox3d = np.concatenate((info['location'],
+                                                            info['dimensions'],
+                                                            info['rotation_y']))
+                                bbox3d = bbox3d.reshape(1, 7)
+                                bboxes_dict[key] = np.concatenate((bboxes_dict[key], bbox3d), 0)
+                        else:
+                            bbox3d = np.concatenate((infos['location'],
+                                                        infos['dimensions'],
+                                                        infos['rotation_y']))
+                            bbox3d = bbox3d.reshape((1, 7))
+                            bboxes_dict[key] = np.concatenate((bboxes_dict[key], bbox3d), 0)
+                for key in keys:
+                    allbboxes.append(bboxes_dict[key][1:])
+                    colors.append(color_map[key])
+                show_results(points, allbboxes, colors, out_dir, file_name, show)
+                # show_results_bev(points, allbboxes, colors, self.pcd_limit_range)
+
