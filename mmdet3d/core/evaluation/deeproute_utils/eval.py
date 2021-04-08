@@ -40,8 +40,6 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty):
         if (gt_name == current_cls_name):
             valid_class = 1
         ignore = False
-        # if ((gt_anno['occluded'][i] > MAX_OCCLUSION[difficulty])
-        #         or (gt_anno['truncated'][i] > MAX_TRUNCATION[difficulty])):
         if gt_anno['difficulty'][i] != difficulty:
             ignore = True
         if valid_class == 1 and not ignore:
@@ -56,7 +54,12 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty):
             valid_class = 1
         else:
             valid_class = -1
-        if valid_class == 1:
+        if dt_anno['difficulty'][i] != difficulty:
+            valid_difficulty = -1
+        else:
+            valid_difficulty = 1
+
+        if valid_class == 1 and valid_difficulty == 1:
             ignored_dt.append(0)
         else:
             ignored_dt.append(-1)

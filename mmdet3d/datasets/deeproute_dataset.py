@@ -467,15 +467,25 @@ class DeeprouteDataset(Custom3DDataset):
         if tmp_dir is not None:
             tmp_dir.cleanup()
         if show:
-            # show_inds = self.get_show_inds(extra_res)
-            self.show(results, out_dir, extra_res, show_inds)
+            #show_inds = self.get_show_inds(extra_res)
+            self.show(results, out_dir, extra_res)
         return ap_dict
+
+    # def get_show_inds(self, extra_res
+    #                     ):
+    #     for extra_res_iou in extra_res:
+    #         for f_idx, res in enumerate(extra_res):
+    #             gts = res['']
 
     def bbox2result_deeproute(self,
                           net_outputs,
                           class_names,
                           pklfile_prefix=None,
-                          submission_prefix=None):
+                          submission_prefix=None,
+                          key_area=[
+                                    [20, 40],
+                                    [10, 20]
+                                    ]):
         """Convert 3D detection results to kitti format for evaluation and test
         submission.
 
@@ -509,7 +519,8 @@ class DeeprouteDataset(Custom3DDataset):
                 'dimensions': [],
                 'location': [],
                 'rotation_y': [],
-                'score': []
+                'score': [],
+                'difficulty':[],
             }
             if len(box_dict['box3d_lidar']) > 0:
                 box_preds = box_dict['box3d_lidar']
@@ -525,6 +536,18 @@ class DeeprouteDataset(Custom3DDataset):
                     anno['location'].append(box[:3])
                     anno['rotation_y'].append(box[6])
                     anno['score'].append(score)
+                    if (abs(box[0]) <= key_area[0][0] and
+                            abs(box[1]) <= key_area[1][0]) or \
+                            (abs(box[0]) <= key_area[0][0] and 
+                            abs(box[1]) <= key_area[1][1]) or \
+                            (abs(box[0]) <= key_area[0][1] and
+                            abs(box[1]) <= key_area[1][0]):
+                        anno['difficulty'].append(0)
+                    elif abs(box[0]) <= key_area[0][1] or \
+                            abs(box[1]) <= key_area[1][1]:
+                        anno['difficulty'].append(1)
+                    else:
+                        anno['difficulty'].append(2)
 
                 anno = {k: np.stack(v) for k, v in anno.items()}
                 annos.append(anno)
