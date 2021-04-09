@@ -445,57 +445,89 @@ class DeeprouteDataset(Custom3DDataset):
         from mmdet3d.core.evaluation import deeproute_eval
         gt_annos = [info['annos'] for info in self.data_infos]
 
-        if isinstance(result_files, dict):
-            ap_dict = dict()
-            for name, result_files_ in result_files.items():
-                eval_types = ['bev', '3d']
-                ap_result_str, ap_dict_, curve_res_bev, curve_res_3d, extra_res = deeproute_eval(
-                    gt_annos,
-                    result_files_,
-                    self.CLASSES,
-                    eval_types=eval_types)
-                self.plot_extra(curve_res_3d['recall'], 
-                                curve_res_3d['fp'], 
-                                'recall', 'fp_3d', 
-                                out_dir)
-                self.plot_extra(curve_res_3d['recall'], 
-                                curve_res_3d['fn'], 
-                                'recall', 'fn_3d', 
-                                out_dir)
-                self.plot_extra(curve_res_3d['thresh'], 
-                                curve_res_3d['precision'], 
-                                'thresh', 'precision', 
-                                out_dir)
-                self.plot_extra(curve_res_3d['thresh'], 
-                                curve_res_3d['recall'], 
-                                'thresh', 'recall', 
-                                out_dir)
+        ap_dict = dict()
+        if 'pts_bbox' in result_files:
+            result_files_ = result_files['pts_bbox']
+            eval_types = ['bev', '3d']
+            ap_result_str, ap_dict_, curve_res_bev, curve_res_3d, extra_res = deeproute_eval(
+                gt_annos,
+                result_files_,
+                self.CLASSES,
+                eval_types=eval_types)
 
-                for ap_type, ap in ap_dict_.items():
-                    ap_dict[f'{name}/{ap_type}'] = float('{:.4f}'.format(ap))
+            for ap_type, ap in ap_dict_.items():
+                ap_dict[f'{ap_type}'] = float('{:.4f}'.format(ap))
 
-                print_log(
-                    f'Results of {name}:\n' + ap_result_str, logger=logger)
-
+            print_log(
+                f'Results :\n' + ap_result_str, logger=logger)
         if tmp_dir is not None:
             tmp_dir.cleanup()
-        if show:
-            # show_inds = self.get_show_inds(extra_res)
-            self.show(results, out_dir, extra_res)
-        return ap_dict
 
-    # def get_show_inds(self, extra_res, curve_res_3d,
-    #                   score_thresh=np.array([0.4, 0.4, 0.7, 0.5, 0.6]),
-    #                   iou_thresh=np.array([0.3, 0.3, 0.5, 0.5, 0.5]),
-    #                   idx_thresh=0.6):
+        info = [extra_res, curve_res_3d, curve_res_bev]
+        return info
 
-    #     
-    #     for extra_res_iou in extra_res:
-    #         for f_idx, f_res in enumerate(extra_res_iou):
-    #             fns_num[f_idx] += extra_res_iou['fns_num']
-    #             fps_num[f_idx] += extra_res_iou['fps_num']
-    #     fns_idx = np.argsort(fns_num)
-    #     fps_idx = np.argsort(fps_num)
+    def coarl_anly(self, curve_res_3d, out_dir):
+        self.plot_extra(curve_res_3d['recall'], 
+                        curve_res_3d['fp'], 
+                        'recall', 'fp_3d', 
+                        out_dir)
+        self.plot_extra(curve_res_3d['recall'], 
+                        curve_res_3d['fn'], 
+                        'recall', 'fn_3d', 
+                        out_dir)
+        self.plot_extra(curve_res_3d['thresh'], 
+                        curve_res_3d['precision'], 
+                        'thresh', 'precision', 
+                        out_dir)
+        self.plot_extra(curve_res_3d['thresh'], 
+                        curve_res_3d['recall'], 
+                        'thresh', 'recall', 
+                        out_dir)
+        self.show(results, out_dir, extra_res)
+
+    def online_eval(self, results, info, out_dir):
+        extra_res = info[0]
+        curve_res_3d = info[1]
+        self.coarl_anly(curve_res_3d, out_dir)
+        # show_inds = self.get_show_inds(extra_res)
+
+    def get_show_inds(self, extra_res, curve_res_3d,
+                      recall_thresh=np.array([0.9, 0.92, 0.94, 0.96, 0.98]),
+                      key_area = [0],
+                      iou_thresh = [0]
+                      ):
+
+        thresholds = curve_res_3d['thresh']
+        recalls = curve_res_3d['recall']
+        tps = curve_res_3d['tp']
+        fps = curve_res_3d['fp']
+        fns = curve_res_3d['fn']
+
+        # get 
+        for i_cls in recalls.shape[0]:
+            thr_ptr = 0
+            idx_ptr = 0
+            idxs_list = []
+            for i_ka in key_area:
+                for i_iou in iou_thresh:
+                    recalls_cls = recalls[i_cls][i_ka][i_iou]
+                    if thr_ptr >= len(recall_thresh) \
+                            or idx_ptr >= recalls_cls.shape[-1] :
+                        break
+                    else:
+                        if recalls_cls[idx_ptr] < recall_thresh[thr_ptr]:
+                            idx_ptr += 1
+                        else:
+                            idxs_list.append(idx_ptr)
+                            idx_ptr += 1
+                            thr_ptr += 1
+
+        # for extra_res_iou in extra_res:
+        #     for f_idx, f_res in enumerate(extra_res_iou):
+        #         fns_num[f_idx] += extra_res_iou['fns_num']
+        #         fps_num[f_idx] += extra_res_iou['fps_num']
+        # fns_idx = np.argsort(fns_num)
+        # fps_idx = np.argsort(fps_num)
 
     def bbox2result_deeproute(self,
                           net_outputs,

@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument('checkpoint', help='checkpoint file')
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument('--noinference', action='store_true')
+    parser.add_argument('--noeval', action='store_true')
     parser.add_argument(
         '--fuse-conv-bn',
         action='store_true',
@@ -111,9 +112,6 @@ def main():
     if args.eval and args.format_only:
         raise ValueError('--eval and --format_only cannot be both specified')
 
-    if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
-        raise ValueError('The output file must be a pkl file.')
-
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
@@ -195,10 +193,12 @@ def main():
 
     rank, _ = get_dist_info()
     if rank == 0:
+        if not os.path.exists(args.out):
+            os.makedirs(args.out)
+        out_results = os.path.join(args.out, 'results.pkl')
         if not args.noinference:
-            if args.out:
-                print(f'\nwriting results to {args.out}')
-                mmcv.dump(outputs, args.out)
+            print(f'\nwriting results to {out_results}')
+            mmcv.dump(outputs, out_results)
         kwargs = {} if args.eval_options is None else args.eval_options
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
@@ -211,11 +211,16 @@ def main():
             ]:
                 eval_kwargs.pop(key, None)
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
-            eval_kwargs.update(dict(show=args.show, out_dir=args.show_dir))
-            if args.noinference:
-                print(f'\nloading results from {args.out}')
-                outputs = mmcv.load(args.out)
-            print(dataset.evaluate(outputs, **eval_kwargs))
+            # eval_kwargs.update(dict(show=args.show, out_dir=args.out_dir))
+            print(f'\nloading results from {out_results}')
+            outputs = mmcv.load(out_results)
+            out_eval = os.path.join(args.out, 'eval.pkl')
+            if not args.noeval:
+                info = dataset.evaluate(outputs, **eval_kwargs)
+                print(f'\nloading eval results from {out_eval}')
+                mmcv.dump(info, out_eval)
+            info = mmcv.load(out_eval)
+            dataset.online_eval(outputs, info, args.out)
 
 
 if __name__ == '__main__':

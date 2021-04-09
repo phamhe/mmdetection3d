@@ -617,6 +617,7 @@ def print_str(value, *arg, sstream=None):
 def get_curve_ap(thresholds, prs, dims):
     result_fp = np.zeros((dims[0], dims[1], dims[2], dims[3]))
     result_fn = np.zeros((dims[0], dims[1], dims[2], dims[3]))
+    result_tp = np.zeros((dims[0], dims[1], dims[2], dims[3]))
     result_recall = np.zeros((dims[0], dims[1], dims[2], dims[3]))
     result_precision = np.zeros((dims[0], dims[1], dims[2], dims[3]))
     result_thresh = np.zeros((dims[0], dims[1], dims[2], dims[3]))
@@ -624,6 +625,7 @@ def get_curve_ap(thresholds, prs, dims):
         for j in range(dims[1]):
             for k in range(dims[2]):
                 result_thresh[i, j, k][:len(thresholds[i][j][k][0])] = thresholds[i][j][k][0][:]
+                result_tp[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 0]
                 result_fp[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 1]
                 result_fn[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 2]
                 result_recall[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 0] / (prs[i][j][k][0][:, 0] + prs[i][j][k][0][:, 2])
@@ -633,6 +635,7 @@ def get_curve_ap(thresholds, prs, dims):
                 'thresh': result_thresh,
                 'fp': result_fp,
                 'fn': result_fn,
+                'tp': result_tp,
                 'recall': result_recall,
                 'precision':result_precision,
                 }
