@@ -211,7 +211,6 @@ def main():
             ]:
                 eval_kwargs.pop(key, None)
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
-            # eval_kwargs.update(dict(show=args.show, out_dir=args.out_dir))
             print(f'\nloading results from {out_results}')
             outputs = mmcv.load(out_results)
             out_eval = os.path.join(args.out, 'eval.pkl')

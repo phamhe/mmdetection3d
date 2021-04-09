@@ -77,6 +77,11 @@ class DeeprouteDataset(Custom3DDataset):
         assert self.modality is not None
         self.pcd_limit_range = pcd_limit_range
         self.pts_prefix = pts_prefix
+        self.cls_name = {
+                    0: 'ped',
+                    1: 'cyc',
+                    2: 'car', 3: 'truck', 4: 'bus',
+                    }
 
     def _get_pts_filename(self, idx):
         """Get point cloud filename according to the given index.
@@ -311,12 +316,10 @@ class DeeprouteDataset(Custom3DDataset):
                     fx = fx[inds]
                     fy = fy[inds]
 
-                    fx, inds = np.unique(fx, return_index=True)
-                    fy = fy[inds]
-                    fx.sort()
+                    # fx, inds = np.unique(fx, return_index=True)
+                    # fy = fy[inds]
+                    # fx.sort()
                     # fx = fx[::-1]
-                    # fy, inds = np.unique(fy, return_index=True)
-                    # fx = fx[inds]
                     if not fx.any() or fx.shape[0]<3:
                         continue
                     # li = interp1d(fx, fy, kind='quadratic')
@@ -483,16 +486,40 @@ class DeeprouteDataset(Custom3DDataset):
                         curve_res_3d['recall'], 
                         'thresh', 'recall', 
                         out_dir)
-        self.show(results, out_dir, extra_res)
+
+    def fine_anly(self, curve_res_3d, show_inds):
+        res_str = ''
+        for cls in range(show_inds.shape[0]):
+            res_str += '-----------------------------\n'
+            res_str += '{} results\n'.format(self.cls_name[cls])
+            for ka in range(show_inds.shape[1]):
+                for iou in range(show_inds.shape[2]):
+                    res_str += 'key_area{}, min_iou{}\n'.format(ka, iou)
+                    keys = list(curve_res_3d.keys())
+                    strs = ['{0:9} :'.format(key) for key in keys]
+                    for i_str, str_ in enumerate(strs):
+                        key = keys[i_str]
+                        case = curve_res_3d[key][cls, ka, iou]
+                        case = case[show_inds[cls, ka, iou]]
+                        for ca in case:
+                            strs[i_str] += ' {0:7},'.format(str('%.4f'%ca))
+                    for str_ in strs:
+                        str_ += '\n'
+                        res_str += str_
+        return res_str
 
     def online_eval(self, results, info, out_dir):
         extra_res = info[0]
         curve_res_3d = info[1]
         self.coarl_anly(curve_res_3d, out_dir)
-        # show_inds = self.get_show_inds(extra_res)
+        show_inds = self.get_thresh_inds(extra_res, curve_res_3d)
+        res_str = self.fine_anly(curve_res_3d, show_inds)
+        print(res_str)
 
-    def get_show_inds(self, extra_res, curve_res_3d,
-                      recall_thresh=np.array([0.9, 0.92, 0.94, 0.96, 0.98]),
+        self.show(results, out_dir, extra_res)
+
+    def get_thresh_inds(self, extra_res, curve_res_3d,
+                      recall_thresh_rel=np.array([0.9, 0.92, 0.94, 0.96, 0.98, 1.0]),
                       key_area = [0],
                       iou_thresh = [0]
                       ):
@@ -503,31 +530,25 @@ class DeeprouteDataset(Custom3DDataset):
         fps = curve_res_3d['fp']
         fns = curve_res_3d['fn']
 
-        # get 
-        for i_cls in recalls.shape[0]:
-            thr_ptr = 0
-            idx_ptr = 0
-            idxs_list = []
-            for i_ka in key_area:
-                for i_iou in iou_thresh:
-                    recalls_cls = recalls[i_cls][i_ka][i_iou]
-                    if thr_ptr >= len(recall_thresh) \
-                            or idx_ptr >= recalls_cls.shape[-1] :
-                        break
-                    else:
-                        if recalls_cls[idx_ptr] < recall_thresh[thr_ptr]:
-                            idx_ptr += 1
-                        else:
-                            idxs_list.append(idx_ptr)
-                            idx_ptr += 1
-                            thr_ptr += 1
+        # get indexs
+        indexs = np.zeros((tps.shape[0], len(key_area), len(iou_thresh), thresholds.shape[3]), dtype=np.bool)
 
-        # for extra_res_iou in extra_res:
-        #     for f_idx, f_res in enumerate(extra_res_iou):
-        #         fns_num[f_idx] += extra_res_iou['fns_num']
-        #         fps_num[f_idx] += extra_res_iou['fps_num']
-        # fns_idx = np.argsort(fns_num)
-        # fps_idx = np.argsort(fps_num)
+        for i_cls in range(recalls.shape[0]):
+            for i_ka in key_area:
+                for idx, i_iou in enumerate(iou_thresh):
+                    inds = recalls[i_cls][i_ka][i_iou] != 0
+                    recalls_cls = recalls[i_cls][i_ka][i_iou][inds]
+                    recall_thresh = [_*recalls_cls[-1] for _ in recall_thresh_rel]
+                    idxs_list = np.zeros((recalls.shape[3],), dtype=np.bool)
+                    thr_ptr = 0
+                    for i_recall in range(recalls_cls.shape[-1]):
+                        if thr_ptr >= len(recall_thresh):
+                            break
+                        elif recalls_cls[i_recall] >= recall_thresh[thr_ptr]:
+                            idxs_list[i_recall] = 1
+                            thr_ptr += 1
+                    indexs[i_cls, i_ka, i_iou][:] = idxs_list
+        return indexs
 
     def bbox2result_deeproute(self,
                           net_outputs,
