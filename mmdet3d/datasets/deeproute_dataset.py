@@ -13,7 +13,8 @@ from ..core.bbox import (Box3DMode, LiDARInstance3DBoxes, Coord3DMode)
 from .custom_3d import Custom3DDataset
 
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d 
+from scipy.interpolate import interp1d, make_interp_spline
+
 
 @DATASETS.register_module()
 class DeeprouteDataset(Custom3DDataset):
@@ -309,25 +310,37 @@ class DeeprouteDataset(Custom3DDataset):
                     inds = fx != 0
                     fx = fx[inds]
                     fy = fy[inds]
+
                     fx, inds = np.unique(fx, return_index=True)
                     fy = fy[inds]
+                    fx.sort()
+                    # fx = fx[::-1]
+                    # fy, inds = np.unique(fy, return_index=True)
+                    # fx = fx[inds]
                     if not fx.any() or fx.shape[0]<3:
                         continue
-                    li = interp1d(fx, fy, kind='quadratic')
-                    fx_new = np.linspace(fx[0], fx[-1], 500)
-                    fy_new = li(fx_new)
+                    # li = interp1d(fx, fy, kind='quadratic')
+                    # fx_new = np.linspace(fx[0], fx[-1], 200)
+                    # fy_new = li(fx_new)
+                    # li = make_interp_spline(fx[::-1], fy[::-1])
+                    # fy_new = li(fx_new)
 
                     label='%s_ka%s_iou%s_%s'%(cls_name[i_cls], 
                                                i_ka, iou_name[i_cls][i_iou], 
                                                postfix)
-                    plt.plot(fx_new, fy_new, 
+                    title='%s_iou%s_%s'%(cls_name[i_cls], 
+                                               iou_name[i_cls][i_iou], 
+                                               postfix)
+                    # plt.plot(fx_new, fy_new, 
+                    #          color=color[i_ka][i_iou],
+                    #          label=label) 
+                    plt.plot(fx, fy, 
                              color=color[i_ka][i_iou],
                              label=label) 
                     plt.xlabel(prefix)
                     plt.ylabel('times')
-                    plt.title(label)
+                    plt.title(title)
                     plt.legend()
-                    # plt.show()
             name ='%s_%s_%s'%(cls_name[i_cls], prefix, postfix)
             plt.savefig(os.path.join(out_dir, name))
             plt.close()
@@ -441,18 +454,18 @@ class DeeprouteDataset(Custom3DDataset):
                     result_files_,
                     self.CLASSES,
                     eval_types=eval_types)
-                # self.plot_extra(curve_res_3d['recall'], 
-                #                 curve_res_3d['fp'], 
-                #                 'recall', 'fp_3d', 
-                #                 out_dir)
-                # self.plot_extra(curve_res_3d['recall'], 
-                #                 curve_res_3d['fn'], 
-                #                 'recall', 'fn_3d', 
-                #                 out_dir)
-                # self.plot_extra(curve_res_3d['thresh'], 
-                #                 curve_res_3d['precision'], 
-                #                 'thresh', 'precision', 
-                #                 out_dir)
+                self.plot_extra(curve_res_3d['recall'], 
+                                curve_res_3d['fp'], 
+                                'recall', 'fp_3d', 
+                                out_dir)
+                self.plot_extra(curve_res_3d['recall'], 
+                                curve_res_3d['fn'], 
+                                'recall', 'fn_3d', 
+                                out_dir)
+                self.plot_extra(curve_res_3d['thresh'], 
+                                curve_res_3d['precision'], 
+                                'thresh', 'precision', 
+                                out_dir)
                 self.plot_extra(curve_res_3d['thresh'], 
                                 curve_res_3d['recall'], 
                                 'thresh', 'recall', 
@@ -467,15 +480,22 @@ class DeeprouteDataset(Custom3DDataset):
         if tmp_dir is not None:
             tmp_dir.cleanup()
         if show:
-            #show_inds = self.get_show_inds(extra_res)
+            # show_inds = self.get_show_inds(extra_res)
             self.show(results, out_dir, extra_res)
         return ap_dict
 
-    # def get_show_inds(self, extra_res
-    #                     ):
+    # def get_show_inds(self, extra_res, curve_res_3d,
+    #                   score_thresh=np.array([0.4, 0.4, 0.7, 0.5, 0.6]),
+    #                   iou_thresh=np.array([0.3, 0.3, 0.5, 0.5, 0.5]),
+    #                   idx_thresh=0.6):
+
+    #     
     #     for extra_res_iou in extra_res:
-    #         for f_idx, res in enumerate(extra_res):
-    #             gts = res['']
+    #         for f_idx, f_res in enumerate(extra_res_iou):
+    #             fns_num[f_idx] += extra_res_iou['fns_num']
+    #             fps_num[f_idx] += extra_res_iou['fps_num']
+    #     fns_idx = np.argsort(fns_num)
+    #     fps_idx = np.argsort(fps_num)
 
     def bbox2result_deeproute(self,
                           net_outputs,
@@ -687,7 +707,16 @@ class DeeprouteDataset(Custom3DDataset):
                 frame_extra = extra_res[j][i]
                 allbboxes = []
                 colors = []
-                keys = frame_extra[0].keys()
+                keys = []
+                for key in frame_extra[0].keys():
+                    if key not in [
+                                    'gt_annos',
+                                    'dts',
+                                    'fps',
+                                    'fns',
+                                    ]:
+                        continue
+                    keys.append(key)
                 bboxes_dict = {key:np.zeros((1, 7)) for key in keys}
 
                 # res in frame

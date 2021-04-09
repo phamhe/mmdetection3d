@@ -629,7 +629,6 @@ def get_curve_ap(thresholds, prs, dims):
                 result_recall[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 0] / (prs[i][j][k][0][:, 0] + prs[i][j][k][0][:, 2])
                 result_precision[i, j, k][:len(prs[i][j][k][0])] = prs[i][j][k][0][:, 0] / (prs[i][j][k][0][:, 0] + prs[i][j][k][0][:, 1])
 
-
     results = {
                 'thresh': result_thresh,
                 'fp': result_fp,
@@ -682,7 +681,8 @@ def do_coco_style_eval(gt_annos, dt_annos, current_classes, overlap_ranges,
 def gather_results(gt_annos,
                     dt_annos,
                     overlaps,
-                    min_overlaps):
+                    min_overlaps,
+                    difficulty_num=3):
     CLASS_NAMES = {'PEDESTRIAN':0, 'CYCLIST':1, 'CAR':2, 'TRUCK':3, 'BUS':4}
     results = []
     for i in range(min_overlaps.shape[0]):
@@ -718,6 +718,8 @@ def gather_results(gt_annos,
                         'dts':[],
                         'fps':[],
                         'fns':[],
+                        'fps_num':np.zeros((difficulty_num,)),
+                        'fns_num':np.zeros((difficulty_num,)),
                         }
                 # recall
                 if idx in inds_set:
@@ -730,6 +732,7 @@ def gather_results(gt_annos,
                                  'rotation_y':np.array([dts['rotation_y'][j]]),
                                  'score':np.array([dts['score'][j]]),
                                  'iou':np.array([max_ious[j]]),
+                                 'difficulty':np.array([dts['difficulty'][j]])
                                 }
                             res['dts'].append(dt)
                             if j in inds_table:
@@ -740,7 +743,9 @@ def gather_results(gt_annos,
                                  'dimensions':gts['dimensions'][idx],
                                  'location':gts['location'][idx],
                                  'rotation_y':np.array([gts['rotation_y'][idx]]),
+                                 'difficulty':np.array([gts['difficulty'][idx]])
                                 }
+                            res['fns_num'][gts['difficulty'][idx]:] += 1
                             res['fns'].append(fn)
                 # fn
                 else :
@@ -749,7 +754,9 @@ def gather_results(gt_annos,
                          'dimensions':gts['dimensions'][idx],
                          'location':gts['location'][idx],
                          'rotation_y':np.array([gts['rotation_y'][idx]]),
+                         'difficulty':np.array([gts['difficulty'][idx]])
                         }
+                    res['fns_num'][gts['difficulty'][idx]:] += 1
                     res['fns'].append(fn)
                 frame_res.append(res)
             for j in inds_table:
@@ -760,7 +767,9 @@ def gather_results(gt_annos,
                      'rotation_y':np.array([dts['rotation_y'][j]]),
                      'score':np.array([dts['score'][j]]),
                      'iou':np.array([max_ious[j]]),
+                     'difficulty':np.array([dts['difficulty'][j]])
                     }
+                res['fps_num'][dts['difficulty'][j]:] += 1
                 res['fps'].append(fp)
             results[i].append(frame_res)
     return results
