@@ -688,93 +688,14 @@ def gather_results(gt_annos,
                     difficulty_num=3):
     CLASS_NAMES = {'PEDESTRIAN':0, 'CYCLIST':1, 'CAR':2, 'TRUCK':3, 'BUS':4}
     results = []
-    for i in range(min_overlaps.shape[0]):
-        results.append([])
         
     for gts, dts, ious in zip(gt_annos, dt_annos, overlaps):
-        if not ious.any():
-            continue
-        max_ious, inds = torch.tensor(ious).max(dim=1)
-        for i in range(min_overlaps.shape[0]):
-
-            # set inds
-            inds_set = {}
-            inds_table = set()
-            for dt_idx, gt_idx in enumerate(inds):
-                if int(gt_idx) not in inds_set:
-                    inds_set[int(gt_idx)] = []
-                inds_set[int(gt_idx)].append(dt_idx)
-                inds_table.add(dt_idx)
-
-            frame_res = []
-            for idx, cls in enumerate(gts['name']):
-                if cls not in CLASS_NAMES:
-                    continue
-                res = {
-                        'gt_annos': {
-                                    'name':gts['name'][idx],
-                                    'dimensions':gts['dimensions'][idx],
-                                    'location':gts['location'][idx],
-                                    'rotation_y':np.array([gts['rotation_y'][idx]]),
-                                    'difficulty':np.array([gts['difficulty'][idx]]),
-                                    },
-                        'dts':[],
-                        'fps':[],
-                        'fns':[],
-                        'fps_num':np.zeros((difficulty_num,)),
-                        'fns_num':np.zeros((difficulty_num,)),
-                        }
-                # recall
-                if idx in inds_set:
-                    for j in inds_set[idx]:
-                        if max_ious[j] > min_overlaps[i][CLASS_NAMES[cls]] and gts['name'][idx] == dts['name'][j]:
-                            dt = {
-                                 'name':dts['name'][j],
-                                 'dimensions':dts['dimensions'][j],
-                                 'location':dts['location'][j],
-                                 'rotation_y':np.array([dts['rotation_y'][j]]),
-                                 'score':np.array([dts['score'][j]]),
-                                 'iou':np.array([max_ious[j]]),
-                                 'difficulty':np.array([dts['difficulty'][j]])
-                                }
-                            res['dts'].append(dt)
-                            if j in inds_table:
-                                inds_table.discard(j)
-                        else:
-                            fn = {
-                                 'name':gts['name'][idx],
-                                 'dimensions':gts['dimensions'][idx],
-                                 'location':gts['location'][idx],
-                                 'rotation_y':np.array([gts['rotation_y'][idx]]),
-                                 'difficulty':np.array([gts['difficulty'][idx]])
-                                }
-                            res['fns_num'][gts['difficulty'][idx]:] += 1
-                            res['fns'].append(fn)
-                # fn
-                else :
-                    fn = {
-                         'name':gts['name'][idx],
-                         'dimensions':gts['dimensions'][idx],
-                         'location':gts['location'][idx],
-                         'rotation_y':np.array([gts['rotation_y'][idx]]),
-                         'difficulty':np.array([gts['difficulty'][idx]])
-                        }
-                    res['fns_num'][gts['difficulty'][idx]:] += 1
-                    res['fns'].append(fn)
-                frame_res.append(res)
-            for j in inds_table:
-                fp = {
-                     'name':dts['name'][j],
-                     'dimensions':dts['dimensions'][j],
-                     'location':dts['location'][j],
-                     'rotation_y':np.array([dts['rotation_y'][j]]),
-                     'score':np.array([dts['score'][j]]),
-                     'iou':np.array([max_ious[j]]),
-                     'difficulty':np.array([dts['difficulty'][j]])
-                    }
-                res['fps_num'][dts['difficulty'][j]:] += 1
-                res['fps'].append(fp)
-            results[i].append(frame_res)
+        frame_res = {
+            'gts':gts,
+            'dts':dts,
+            'ious':ious,
+        }
+        results.append(frame_res)
     return results
 
 def reform_data(res):

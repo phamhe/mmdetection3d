@@ -82,6 +82,11 @@ class DeeprouteDataset(Custom3DDataset):
                     1: 'cyc',
                     2: 'car', 3: 'truck', 4: 'bus',
                     }
+        self.cls_idx = {
+                    'pedestrian': 0,
+                    'cyclist': 1,
+                    'car': 2, 'truck': 3, 'bus': 4,
+                    }
 
     def _get_pts_filename(self, idx):
         """Get point cloud filename according to the given index.
@@ -516,7 +521,8 @@ class DeeprouteDataset(Custom3DDataset):
         res_str = self.fine_anly(curve_res_3d, show_inds)
         print(res_str)
 
-        self.show(results, out_dir, extra_res)
+        fresults = self.get_fine_res(results, extra_res)
+        self.show(results, out_dir, fresults)
 
     def get_thresh_inds(self, extra_res, curve_res_3d,
                       recall_thresh_rel=np.array([0.9, 0.92, 0.94, 0.96, 0.98, 1.0]),
@@ -724,7 +730,122 @@ class DeeprouteDataset(Custom3DDataset):
                 sample_idx=sample_idx,
             )
 
-    def show(self, results, out_dir, extra_res, show=True):
+    def get_fine_res(self, results, extra_res, 
+                thresh=np.array([0.31, 0.36, 0.75, 0.52, 0.77]),
+                iou=np.array([0.3, 0.3, 0.5, 0.5, 0.5]),
+                show=True):
+
+        # get fps && fns in score & iou
+        fps = np.zeros((len(self.cls_name), len(results), 3))
+        fns = np.zeros((len(self.cls_name), len(results), 3))
+        final_results = []
+        for i, result in enumerate(results):
+            frame_extra = extra_res[i]
+            gts = frame_extra['gts']
+            dts = frame_extra['dts']
+            ious = frame_extra['ious']
+            max_ious = np.zeros(ious.shape[0])
+            inds = np.zeros(ious.shape[0])
+            ious_flag = False
+            if ious.any():
+                ious_flag = True
+                max_ious, inds = torch.tensor(ious).max(dim=1)
+            # set inds
+            inds_set = {}
+            inds_table = set()
+            for dt_idx, gt_idx in enumerate(inds):
+                if int(gt_idx) not in inds_set:
+                    inds_set[int(gt_idx)] = []
+                inds_set[int(gt_idx)].append(dt_idx)
+                inds_table.add(dt_idx)
+            frame_res = []
+            for idx, cls in enumerate(gts['name']):
+                if cls.lower() not in self.cls_idx:
+                    continue
+                res = {
+                        'gt_annos': {
+                                    'name':gts['name'][idx],
+                                    'dimensions':gts['dimensions'][idx],
+                                    'location':gts['location'][idx],
+                                    'rotation_y':np.array([gts['rotation_y'][idx]]),
+                                    'difficulty':np.array([gts['difficulty'][idx]]),
+                                    },
+                        'dts':[],
+                        'fps':[],
+                        'fns':[],
+                        }
+                fn_flag = False
+                if not ious_flag:
+                    for j in range(dts['name'].shape[0]):
+                        dt_name = dts['name'][j].lower()
+                        dt = {
+                             'name':dts['name'][j],
+                             'dimensions':dts['dimensions'][j],
+                             'location':dts['location'][j],
+                             'rotation_y':np.array([dts['rotation_y'][j]]),
+                             'score':np.array([dts['score'][j]]),
+                             'iou':np.array([0]),
+                             'difficulty':np.array([dts['difficulty'][j]])
+                            }
+                        res['fps'].append(dt)
+                    fn = {
+                         'name':gts['name'][idx],
+                         'dimensions':gts['dimensions'][idx],
+                         'location':gts['location'][idx],
+                         'rotation_y':np.array([gts['rotation_y'][idx]]),
+                         'difficulty':np.array([gts['difficulty'][idx]])
+                        }
+                    res['fns'].append(fn)
+                else:
+                    fn = {
+                         'name':gts['name'][idx],
+                         'dimensions':gts['dimensions'][idx],
+                         'location':gts['location'][idx],
+                         'rotation_y':np.array([gts['rotation_y'][idx]]),
+                         'difficulty':np.array([gts['difficulty'][idx]])
+                        }
+                    # recall
+                    if idx in inds_set:
+                        for j in inds_set[idx]:
+                            dt_name = dts['name'][j].lower()
+                            dt = {
+                                 'name':dts['name'][j],
+                                 'dimensions':dts['dimensions'][j],
+                                 'location':dts['location'][j],
+                                 'rotation_y':np.array([dts['rotation_y'][j]]),
+                                 'score':np.array([dts['score'][j]]),
+                                 'iou':np.array([max_ious[j]]),
+                                 'difficulty':np.array([dts['difficulty'][j]])
+                                }
+                            if max_ious[j] > iou[self.cls_idx[dt_name]] and \
+                                gts['name'][idx] == dts['name'][j] and \
+                                dts['score'][j] > thresh[self.cls_idx[dt_name]]:
+                                res['dts'].append(dt)
+                            else:
+                                res['fps'].append(dt)
+                            if j in inds_table:
+                                inds_table.discard(j)
+                        if len(res['dts']) == 0:
+                            res['fns'].append(fn)
+                    else:
+                        res['fns'].append(fn)
+                    for j in inds_table:
+                        fp = {
+                             'name':dts['name'][j],
+                             'dimensions':dts['dimensions'][j],
+                             'location':dts['location'][j],
+                             'rotation_y':np.array([dts['rotation_y'][j]]),
+                             'score':np.array([dts['score'][j]]),
+                             'iou':np.array([max_ious[j]]),
+                             'difficulty':np.array([dts['difficulty'][j]])
+                            }
+                        res['fps'].append(fp)
+                frame_res.append(res)
+            final_results.append(frame_res)
+        return final_results
+
+    def show(self, results, out_dir, extra_res, 
+                show=True):
         """Results visualization.
 
         Args:
@@ -732,15 +853,15 @@ class DeeprouteDataset(Custom3DDataset):
             out_dir (str): Output directory of visualization result.
             show (bool): Visualize the results online.
         """
-        assert out_dir is not None, 'Expect out_dir, got none.'
         color_map = {
                     'gt_annos':(0, 255, 0),
                     'dts':(0, 0, 255),
                     'fns':(255, 153, 0),
                     'fps':(255, 0, 0)
                     }
-
+                        
         for i, result in enumerate(results):
+
             example = self.prepare_test_data(i)
             data_info = self.data_infos[i]
             pts_path = data_info['point_cloud']['velodyne_path']
@@ -752,46 +873,45 @@ class DeeprouteDataset(Custom3DDataset):
             if 'pts_bbox' in result:
                 result = result['pts_bbox']
             pred_bboxes = result['boxes_3d'].tensor.numpy()
-            # show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name,
-            #             show)
+            show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name,
+                        show)
 
             # frame in extra_res
-            for j in range(len(extra_res)):
-                frame_extra = extra_res[j][i]
-                allbboxes = []
-                colors = []
-                keys = []
-                for key in frame_extra[0].keys():
-                    if key not in [
-                                    'gt_annos',
-                                    'dts',
-                                    'fps',
-                                    'fns',
-                                    ]:
-                        continue
-                    keys.append(key)
-                bboxes_dict = {key:np.zeros((1, 7)) for key in keys}
+            frame_extra = extra_res[i]
+            allbboxes = []
+            colors = []
+            keys = []
+            for key in frame_extra[0].keys():
+                if key not in [
+                                'gt_annos',
+                                'dts',
+                                'fps',
+                                'fns',
+                                ]:
+                    continue
+                keys.append(key)
+            bboxes_dict = {key:np.zeros((1, 7)) for key in keys}
 
-                # res in frame
-                for res in frame_extra:
-                    for key in keys:
-                        infos = res[key]
-                        if isinstance(infos, list):
-                            for info in infos:
-                                bbox3d = np.concatenate((info['location'],
-                                                            info['dimensions'],
-                                                            info['rotation_y']))
-                                bbox3d = bbox3d.reshape(1, 7)
-                                bboxes_dict[key] = np.concatenate((bboxes_dict[key], bbox3d), 0)
-                        else:
-                            bbox3d = np.concatenate((infos['location'],
-                                                        infos['dimensions'],
-                                                        infos['rotation_y']))
-                            bbox3d = bbox3d.reshape((1, 7))
-                            bboxes_dict[key] = np.concatenate((bboxes_dict[key], bbox3d), 0)
+            # res in frame
+            for res in frame_extra:
                 for key in keys:
-                    allbboxes.append(bboxes_dict[key][1:])
-                    colors.append(color_map[key])
-                show_results(points, allbboxes, colors, out_dir, file_name, show)
-                # show_results_bev(points, allbboxes, colors, self.pcd_limit_range)
+                    infos = res[key]
+                    if isinstance(infos, list):
+                        for info in infos:
+                            bbox3d = np.concatenate((info['location'],
+                                                        info['dimensions'],
+                                                        info['rotation_y']))
+                            bbox3d = bbox3d.reshape(1, 7)
+                            bboxes_dict[key] = np.concatenate((bboxes_dict[key], bbox3d), 0)
+                    else:
+                        bbox3d = np.concatenate((infos['location'],
+                                                    infos['dimensions'],
+                                                    infos['rotation_y']))
+                        bbox3d = bbox3d.reshape((1, 7))
+                        bboxes_dict[key] = np.concatenate((bboxes_dict[key], bbox3d), 0)
+            for key in keys:
+                allbboxes.append(bboxes_dict[key][1:])
+                colors.append(color_map[key])
+            show_results(points, allbboxes, colors, out_dir, file_name, show)
+            # show_results_bev(points, allbboxes, colors, self.pcd_limit_range)
 
