@@ -802,7 +802,9 @@ class DeeprouteDataset(Custom3DDataset):
                          'dimensions':gts['dimensions'][idx],
                          'location':gts['location'][idx],
                          'rotation_y':np.array([gts['rotation_y'][idx]]),
-                         'difficulty':np.array([gts['difficulty'][idx]])
+                         'difficulty':np.array([gts['difficulty'][idx]]),
+                         'score':np.array([0.0]),
+                         'iou':np.array([0.0])
                         }
                     # recall
                     if idx in inds_set:
@@ -873,13 +875,14 @@ class DeeprouteDataset(Custom3DDataset):
             if 'pts_bbox' in result:
                 result = result['pts_bbox']
             pred_bboxes = result['boxes_3d'].tensor.numpy()
-            show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name,
-                        show)
+            # show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name,
+            #             show)
 
             # frame in extra_res
             frame_extra = extra_res[i]
             allbboxes = []
             colors = []
+            labels = []
             keys = []
             for key in frame_extra[0].keys():
                 if key not in [
@@ -891,6 +894,7 @@ class DeeprouteDataset(Custom3DDataset):
                     continue
                 keys.append(key)
             bboxes_dict = {key:np.zeros((1, 7)) for key in keys}
+            labels_dict = {key:np.zeros((1, 7)) for key in keys} # cls, cls_idx, score, ious, difficulty, location
 
             # res in frame
             for res in frame_extra:
@@ -902,16 +906,34 @@ class DeeprouteDataset(Custom3DDataset):
                                                         info['dimensions'],
                                                         info['rotation_y']))
                             bbox3d = bbox3d.reshape(1, 7)
+                            label = np.concatenate((np.array([info['name']]),
+                                                    np.array([self.cls_idx[info['name'].lower()]]),
+                                                    info['score'],
+                                                    info['iou'],
+                                                    info['difficulty'],
+                                                    info['location'][:-1]))
+                            label = label.reshape(1, 7)
                             bboxes_dict[key] = np.concatenate((bboxes_dict[key], bbox3d), 0)
+                            labels_dict[key] = np.concatenate((labels_dict[key], label), 0)
+                    # gt
                     else:
                         bbox3d = np.concatenate((infos['location'],
                                                     infos['dimensions'],
                                                     infos['rotation_y']))
                         bbox3d = bbox3d.reshape((1, 7))
+                        label = np.concatenate((np.array([infos['name']]),
+                                                np.array([self.cls_idx[infos['name'].lower()]]),
+                                                np.array([1.0]),
+                                                np.array([0.0]),
+                                                infos['difficulty'],
+                                                infos['location'][:-1]))
+                        label = label.reshape((1, 7))
                         bboxes_dict[key] = np.concatenate((bboxes_dict[key], bbox3d), 0)
+                        labels_dict[key] = np.concatenate((labels_dict[key], label), 0)
             for key in keys:
                 allbboxes.append(bboxes_dict[key][1:])
                 colors.append(color_map[key])
-            show_results(points, allbboxes, colors, out_dir, file_name, show)
-            # show_results_bev(points, allbboxes, colors, self.pcd_limit_range)
-
+                labels.append(labels_dict[key][1:])
+            # show_results(points, allbboxes, colors, out_dir, file_name, show)
+            show_results_bev(points, allbboxes, colors, self.pcd_limit_range, labels)
+            exit()

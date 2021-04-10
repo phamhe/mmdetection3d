@@ -141,6 +141,6 @@ def show_results_bev(points, allbboxes, colors, points_range, labels=None, show=
     if show:
         vis = Visualizer_bev(points, points_range)
         for idx, bboxes in enumerate(allbboxes):
-            vis.add_bboxes(bboxes, colors[idx], labels)
+            vis.add_bboxes(bboxes, colors[idx], labels[idx])
         vis.show()
         

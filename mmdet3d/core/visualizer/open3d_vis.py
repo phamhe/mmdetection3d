@@ -531,7 +531,9 @@ class Visualizer(object):
 class Visualizer_bev(object):
     def __init__(self, point, 
                 points_range,
-                scale_factor=[5, 5]):
+                scale_factor=[5, 5],
+                key_area = [[20, 40],
+                            [10, 20]]):
         super(Visualizer_bev, self).__init__()
         self.frame_size = np.zeros((2,), dtype=np.int32)
         self.frame_size[0] = int(points_range[4] - points_range[1]) + 40
@@ -539,8 +541,39 @@ class Visualizer_bev(object):
         self.scale_factor = scale_factor
         self.frame_size[1] *= self.scale_factor[0]
         self.frame_size[0] *= self.scale_factor[1]
+
+        # prepare canvas
         self.canvas = np.zeros((self.frame_size[0], self.frame_size[1], 3), dtype='uint8')
         self.canvas.fill(255)
+        x_axis = int(self.frame_size[1]/100)
+        y_axis = int(self.frame_size[0]/100)
+        for i in range(x_axis):
+            cv2.line(self.canvas, 
+                        (i*100, 0), 
+                        (i*100, self.frame_size[0]),
+                        (0, 255, 255), 1)
+        for i in range(y_axis):
+            cv2.line(self.canvas, 
+                        (0, i*100), 
+                        (self.frame_size[1], i*100),
+                        (0, 255, 255), 1)
+        class_name = ['PED',
+                        'CYC',
+                        'CAR',
+                        'TRUCK',
+                        'BUS']
+        for i in range(5):
+            x_pos = i*160
+            y_pos = 40
+            cv2.putText(self.canvas, 
+                '%s'%(class_name[i]), 
+                (x_pos, y_pos), cv2.FONT_HERSHEY_COMPLEX, 0.6, (0, 0, 255), 1)
+        self.y_pos = np.ones((5, 1))
+        self.y_pos += 1
+        # key area 0
+        # cv2.rectange(self.canvas, (),
+        #                           (),
+        #                           (0, 0, 255))
 
     def add_bboxes(self, bboxes, color, labels):
 
@@ -578,13 +611,20 @@ class Visualizer_bev(object):
             corners = corners.astype(dtype=np.int32)
             cv2.polylines(self.canvas, [corners], True, new_color, 2)
 
-            # if extra_infos:
-            #     if labels is not None:
-            #         dt, score  = labels[i]
-            #         cv2.putText(self.canvas, '%s : %.3f'%(str(dt), score), (int(center[0]), int(center[1])), cv2.FONT_HERSHEY_COMPLEX, 0.6, color, 1)
+            if extra_infos:
+                if labels is not None:
+                    label = labels[i]
+                    x_pos = 160*(int(label[1]))
+                    y_pos = 40*self.y_pos[int(label[1])]
+                    self.y_pos[int(label[1])] += 1
+                    cv2.putText(self.canvas, 
+                            '%.1f, %.1f, %.2f, %.2f'%(float(label[5]), float(label[6]), 
+                            float(label[2]), float(label[3])), 
+                            (x_pos, y_pos), 
+                            cv2.FONT_HERSHEY_COMPLEX, 0.4, new_color, 1)
 
     def show(self):
         cv2.imshow('debug', self.canvas)
-        cv2.waitKey(0)
+        cv2.waitKey()
 
 
