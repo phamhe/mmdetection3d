@@ -536,7 +536,7 @@ class Visualizer_bev(object):
                 out_dir,
                 prefix,
                 save=True,
-                scale_factor=[5, 5],
+                scale_factor=[10, 10],
                 key_area = [[20, 40],
                             [10, 20]]):
         super(Visualizer_bev, self).__init__()
@@ -554,31 +554,33 @@ class Visualizer_bev(object):
         # prepare canvas
         self.canvas = np.zeros((self.frame_size[0], self.frame_size[1], 3), dtype='uint8')
         self.canvas.fill(255)
-        x_axis = int(self.frame_size[1]/100)
-        y_axis = int(self.frame_size[0]/100)
-        for i in range(x_axis):
+        canvas_center_x = int(self.frame_size[1]/2+20)
+        canvas_center_y = int(self.frame_size[0]/2+20)
+
+        cv2.circle(self.canvas,
+                     (canvas_center_x,
+                     canvas_center_y),
+                     4, (0, 0, 0), -1)
+        x_axis = int(canvas_center_x/(10*self.scale_factor[1]))
+        y_axis = int(canvas_center_y/(10*self.scale_factor[0]))
+        for i in range(-x_axis, x_axis):
             cv2.line(self.canvas, 
-                        (i*100, 0), 
-                        (i*100, self.frame_size[0]),
+                        (canvas_center_x+i*10*self.scale_factor[0], 
+                        0), 
+                        (canvas_center_x+i*10*self.scale_factor[0], self.frame_size[0]),
                         (0, 255, 255), 1)
-        for i in range(y_axis):
+        for i in range(-y_axis, y_axis):
             cv2.line(self.canvas, 
-                        (0, i*100), 
-                        (self.frame_size[1], i*100),
+                        (0, 
+                        canvas_center_y+i*10*self.scale_factor[0]), 
+                        (self.frame_size[1], 
+                        canvas_center_y+i*10*self.scale_factor[1]),
                         (0, 255, 255), 1)
         class_name = ['PEDESTRIAN',
                         'CYCLIST',
                         'CAR',
                         'TRUCK',
                         'BUS']
-        for i in range(5):
-            x_pos = i*160
-            y_pos = 40
-            cv2.putText(self.canvas, 
-                '%s'%(class_name[i]), 
-                (x_pos, y_pos), cv2.FONT_HERSHEY_COMPLEX, 0.6, (0, 0, 255), 1)
-        self.y_pos = np.ones((5, 1))
-        self.y_pos += 1
         # key area 0
         # cv2.rectange(self.canvas, (),
         #                           (),
@@ -594,8 +596,9 @@ class Visualizer_bev(object):
                                     'others':[]
                                     }
 
-    def add_bboxes(self, bboxes, color, labels, bbox_type):
+    def add_bboxes(self, bboxes_ori, color, labels, bbox_type):
 
+        bboxes = bboxes_ori.copy()
         bboxes[:, 0] *= self.scale_factor[0]
         bboxes[:, 4] *= self.scale_factor[0]
         bboxes[:, 1] *= self.scale_factor[1]
@@ -633,16 +636,16 @@ class Visualizer_bev(object):
             if extra_infos:
                 if labels is not None:
                     label = labels[i]
+                    if bbox_type == 'gt_annos' or \
+                        bbox_type == 'fns':
+                        x_pos = int(bboxes[i, 0])
+                        y_pos = int(bboxes[i, 1])
+                        cv2.putText(self.canvas, 
+                                '%s'%(i), 
+                               (x_pos, y_pos), 
+                               cv2.FONT_HERSHEY_COMPLEX, 0.4, new_color, 1)
+                        label = np.concatenate((label, np.array([i])))
                     self.frame_infos[label[0]][bbox_type].append(label)
-            #         label = labels[i]
-            #         x_pos = 160*(int(label[1]))
-            #         y_pos = 40*self.y_pos[int(label[1])]
-            #         self.y_pos[int(label[1])] += 1
-            #         cv2.putText(self.canvas, 
-            #                 '%.1f, %.1f, %.2f, %.2f'%(float(label[5]), float(label[6]), 
-            #                 float(label[2]), float(label[3])), 
-            #                 (x_pos, y_pos), 
-            #                 cv2.FONT_HERSHEY_COMPLEX, 0.4, new_color, 1)
 
     def context_infos(self):
         fout = open(os.path.join(self.out_dir, 'frame_%s.txt'%self.prefix), 'w')
@@ -655,14 +658,19 @@ class Visualizer_bev(object):
                 out_str += '    %s\n'%b_type
                 if len(cls_infos[b_type]) == 0:
                     continue
-                labels = np.stack(cls_infos[b_type], 0)
-                inds = np.argsort(labels[:, 4])
-                for idx in inds:
-                    out_str += '      %.1f %1.f %.3f %.3f\n'%(
-                    float(labels[idx, 4]), 
-                    float(labels[idx, 5]),
+                # labels = np.stack(cls_infos[b_type], 0)
+                # inds = np.argsort(labels[:, 5])
+                for idx in range(labels.shape[0]):
+                    out_str += '      %s %.2f %.2f %.3f %.3f'%(
+                    float(labels[idx, 0]), 
+                    float(labels[idx, 5]), 
+                    float(labels[idx, 6]),
                     float(labels[idx, 2]),
                     float(labels[idx, 3]))
+                    if labels[idx].shape[0] > 7:
+                        out_str += ' %s\n'%labels[idx, 7]
+                    else:
+                        out_str += '\n'
             out_str += '-----------------------------\n'
         fout.write(out_str)
         fout.close()

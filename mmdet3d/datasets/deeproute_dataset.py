@@ -539,7 +539,7 @@ class DeeprouteDataset(Custom3DDataset):
     def get_final_index(self, fps, fns,
                         classes=[2],
                         difficulty=[0],
-                        thresh=0.4):
+                        thresh=1.0):
         
         ffps_idx = []
         ffns_idx = []
@@ -570,12 +570,12 @@ class DeeprouteDataset(Custom3DDataset):
                 for i_fps in args_fps:
                     fps_sum += fps_cls[i_fps]
                     fps_ptr += 1
-                    if fps_sum < fps_num_sel:
+                    if fps_sum >= fps_num_sel:
                         break
                 for i_fns in args_fns:
                     fns_sum += fns_cls[i_fns]
                     fns_ptr += 1
-                    if fns_sum < fns_num_sel:
+                    if fns_sum >= fns_num_sel:
                         break
 
                 fps_idx = args_fps[:fps_ptr+1]
@@ -1022,6 +1022,6 @@ class DeeprouteDataset(Custom3DDataset):
             allbboxes.append(bboxes_dict[key][1:])
             colors.append(color_map[key])
             labels.append(labels_dict[key][1:])
-        show_results_bev(points, allbboxes, colors, keys, self.pcd_limit_range, out_dir, i, labels)
+        pcd_limit_range = [-40, -20, 0, 40, 20, 0]
+        show_results_bev(points, allbboxes, colors, keys, pcd_limit_range, out_dir, i, labels)
         show_results(points, allbboxes, colors, out_dir, file_name, show)
-        exit()
