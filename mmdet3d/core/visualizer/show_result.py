@@ -136,11 +136,13 @@ def show_result_bev(points, gt_bboxes, dt_bboxes, gt_labels=None, dt_labels=None
         vis = Visualizer_bev(points, gt_bboxes, dt_bboxes,
                             gt_labels, dt_labels)
         vis.show()
-def show_results_bev(points, allbboxes, colors, points_range, labels=None, show=True):
+def show_results_bev(points, allbboxes, colors, types, points_range, out_dir, prefix, labels=None, save=True, show=True):
     from .open3d_vis import Visualizer_bev
+    vis = Visualizer_bev(points, points_range, out_dir, prefix, save)
+    for idx, bboxes in enumerate(allbboxes):
+        vis.add_bboxes(bboxes, colors[idx], labels[idx], types[idx])
+    if save:
+        vis.context_infos()
     if show:
-        vis = Visualizer_bev(points, points_range)
-        for idx, bboxes in enumerate(allbboxes):
-            vis.add_bboxes(bboxes, colors[idx], labels[idx])
         vis.show()
         

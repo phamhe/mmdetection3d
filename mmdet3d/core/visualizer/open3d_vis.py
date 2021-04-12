@@ -5,6 +5,8 @@ from matplotlib import pyplot as plt
 import cv2
 import math
 
+import os
+
 try:
     import open3d as o3d
     from open3d import geometry
@@ -531,10 +533,17 @@ class Visualizer(object):
 class Visualizer_bev(object):
     def __init__(self, point, 
                 points_range,
+                out_dir,
+                prefix,
+                save=True,
                 scale_factor=[5, 5],
                 key_area = [[20, 40],
                             [10, 20]]):
         super(Visualizer_bev, self).__init__()
+        self.out_dir = out_dir
+        self.prefix = prefix
+        self.save = save
+
         self.frame_size = np.zeros((2,), dtype=np.int32)
         self.frame_size[0] = int(points_range[4] - points_range[1]) + 40
         self.frame_size[1] = int(points_range[3] - points_range[0]) + 40
@@ -557,8 +566,8 @@ class Visualizer_bev(object):
                         (0, i*100), 
                         (self.frame_size[1], i*100),
                         (0, 255, 255), 1)
-        class_name = ['PED',
-                        'CYC',
+        class_name = ['PEDESTRIAN',
+                        'CYCLIST',
                         'CAR',
                         'TRUCK',
                         'BUS']
@@ -575,7 +584,17 @@ class Visualizer_bev(object):
         #                           (),
         #                           (0, 0, 255))
 
-    def add_bboxes(self, bboxes, color, labels):
+        self.frame_infos = {}
+        for cls in class_name:
+            self.frame_infos[cls] = {
+                                    'gt_annos':[],
+                                    'dts':[],
+                                    'fps':[],
+                                    'fns':[],
+                                    'others':[]
+                                    }
+
+    def add_bboxes(self, bboxes, color, labels, bbox_type):
 
         bboxes[:, 0] *= self.scale_factor[0]
         bboxes[:, 4] *= self.scale_factor[0]
@@ -586,9 +605,9 @@ class Visualizer_bev(object):
         bboxes[:, 0] = bboxes[:, 0] + 20 + (self.frame_size[1])/2
         bboxes[:, 1] = bboxes[:, 1] + 20 + (self.frame_size[0])/2
 
-        self.draw_bev_bboxes(bboxes, labels, color)
+        self.draw_bev_bboxes(bboxes, labels, color, bbox_type)
 
-    def draw_bev_bboxes(self, bboxes, labels=None, color=(255, 0, 0), extra_infos=True, rot_axis=2):
+    def draw_bev_bboxes(self, bboxes, labels=None, color=(255, 0, 0), bbox_type=None, extra_infos=True, rot_axis=2):
         new_color = (color[2], color[1], color[0])
         for i, bbox in enumerate(bboxes):
             center = bboxes[i, 0:2]
@@ -614,14 +633,42 @@ class Visualizer_bev(object):
             if extra_infos:
                 if labels is not None:
                     label = labels[i]
-                    x_pos = 160*(int(label[1]))
-                    y_pos = 40*self.y_pos[int(label[1])]
-                    self.y_pos[int(label[1])] += 1
-                    cv2.putText(self.canvas, 
-                            '%.1f, %.1f, %.2f, %.2f'%(float(label[5]), float(label[6]), 
-                            float(label[2]), float(label[3])), 
-                            (x_pos, y_pos), 
-                            cv2.FONT_HERSHEY_COMPLEX, 0.4, new_color, 1)
+                    self.frame_infos[label[0]][bbox_type].append(label)
+            #         label = labels[i]
+            #         x_pos = 160*(int(label[1]))
+            #         y_pos = 40*self.y_pos[int(label[1])]
+            #         self.y_pos[int(label[1])] += 1
+            #         cv2.putText(self.canvas, 
+            #                 '%.1f, %.1f, %.2f, %.2f'%(float(label[5]), float(label[6]), 
+            #                 float(label[2]), float(label[3])), 
+            #                 (x_pos, y_pos), 
+            #                 cv2.FONT_HERSHEY_COMPLEX, 0.4, new_color, 1)
+
+    def context_infos(self):
+        fout = open(os.path.join(self.out_dir, 'frame_%s.txt'%self.prefix), 'w')
+        out_str = 'RSULTS IN DETECTION\n'
+        out_str += '----------------------------\n'
+        for cls in self.frame_infos:
+            out_str += '  %s\n'%cls
+            cls_infos = self.frame_infos[cls]
+            for b_type in cls_infos:
+                out_str += '    %s\n'%b_type
+                if len(cls_infos[b_type]) == 0:
+                    continue
+                labels = np.stack(cls_infos[b_type], 0)
+                inds = np.argsort(labels[:, 4])
+                for idx in inds:
+                    out_str += '      %.1f %1.f %.3f %.3f\n'%(
+                    float(labels[idx, 4]), 
+                    float(labels[idx, 5]),
+                    float(labels[idx, 2]),
+                    float(labels[idx, 3]))
+            out_str += '-----------------------------\n'
+        fout.write(out_str)
+        fout.close()
+        cv2.imwrite(os.path.join(self.out_dir, 'frame_%s.jpg'%self.prefix), self.canvas)
+        
+        
 
     def show(self):
         cv2.imshow('debug', self.canvas)
