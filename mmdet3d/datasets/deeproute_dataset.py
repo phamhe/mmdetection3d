@@ -1022,6 +1022,6 @@ class DeeprouteDataset(Custom3DDataset):
             allbboxes.append(bboxes_dict[key][1:])
             colors.append(color_map[key])
             labels.append(labels_dict[key][1:])
+        show_results_bev(points, allbboxes, colors, keys, self.pcd_limit_range, out_dir, i, labels)
         show_results(points, allbboxes, colors, out_dir, file_name, show)
-        show_results_bev(points, allbboxes, colors, self.pcd_limit_range, labels)
         exit()
