@@ -330,8 +330,6 @@ class DeeprouteDataset(Custom3DDataset):
                     # li = interp1d(fx, fy, kind='quadratic')
                     # fx_new = np.linspace(fx[0], fx[-1], 200)
                     # fy_new = li(fx_new)
-                    # li = make_interp_spline(fx[::-1], fy[::-1])
-                    # fy_new = li(fx_new)
 
                     label='%s_ka%s_iou%s_%s'%(cls_name[i_cls], 
                                                i_ka, iou_name[i_cls][i_iou], 
@@ -353,77 +351,11 @@ class DeeprouteDataset(Custom3DDataset):
             plt.savefig(os.path.join(out_dir, name))
             plt.close()
                     
-    # def plot_extra(self, eval_res, out_dir, cls_group=[[0, 1], [2, 3, 4]]):
-    #     color = {
-    #             0:['red', 'darkred', 'lightcoral'],
-    #             1:['green', 'darkgreen', 'lightgreen'],
-    #             2:['blue', 'darkblue', 'royalblue'],
-    #             }
-    #     plt_ptr = 0
-    #     group_ptr = 0
-    #     for level in eval_res:
-    #         eval_res_level = eval_res[level]
-    #         for eval_key in eval_res_level:
-    #             for idx, cls_err_all in enumerate(eval_res_level[eval_key]):
-    #                 if idx not in cls_group[group_ptr]:
-    #                     group_ptr += 1
-    #                     while group_ptr > len(cls_group) - 1:
-    #                         group_ptr %= len(cls_group)
-    #                     plt_ptr += 1
-    #                     plt.figure(plt_ptr)
-
-    #                 cls_err_all = np.stack(cls_err_all, axis=0)
-    #                 cls_err_all = np.sort(cls_err_all, 0)
-    #                 cls_err_min_all = cls_err_all[0]
-    #                 cls_err_max_all = cls_err_all[-1]
-    #                 axis_x_all = np.linspace(cls_err_min_all, cls_err_max_all, 60)
-    #                 if len(axis_x_all.shape) > 1:
-    #                     dim = axis_x_all.shape[1]
-    #                 else:
-    #                     dim = 1
-    #                 for i in range(dim):
-    #                     cls_err = cls_err_all
-    #                     axis_x = axis_x_all
-    #                     cls_err_min = cls_err_min_all
-    #                     cls_err_max = cls_err_max_all
-    #                     if len(axis_x_all.shape) > 1:
-    #                         cls_err = cls_err_all[:, i]
-    #                         axis_x = axis_x_all[:, i]
-    #                         cls_err_min = cls_err_min_all[i]
-    #                         cls_err_max = cls_err_max_all[i]
-    #                     axis_y = np.zeros(axis_x.shape[0])
-
-    #                     ptr = 0
-    #                     count = 0
-    #                     for j, err in enumerate(cls_err):
-    #                         count += 1
-    #                         if err >= axis_x[ptr]:
-    #                             axis_y[ptr] = count
-    #                             ptr += 1
-    #                             count = 0
-
-    #                     li = interp1d(axis_x, axis_y, kind='quadratic')
-    #                     axis_x_new = np.linspace(cls_err_min, cls_err_max, 1000)
-    #                     axis_y_new = li(axis_x_new)
-    #                     plt.plot(axis_x_new, axis_y_new, 
-    #                             color=color[idx%(
-    #                                     len(cls_group[group_ptr]))][i],
-    #                              label='cls_%s_%s_%s_%s'%(idx, level, eval_key, i))
-    #                     # plt.plot(axis_x, axis_y, 'o',
-    #                     #         color=color[idx%(
-    #                     #                 len(cls_group[group_ptr]))][i],
-    #                     #          label='cls_%s_%s_%s_%s'%(idx, level, eval_key, i))
-    #                 plt.xlabel(eval_key)
-    #                 plt.ylabel('times')
-    #                 plt.title('cls_%s_%s_%s'%(idx, level, eval_key))
-    #                 plt.legend()
-    #                 # plt.show()
-    #                 plt.savefig(os.path.join(out_dir, 'cls_%s_%s_%s'%(idx, level, eval_key)))
-    #                 plt.close()
-
     def evaluate(self,
                  results,
                  metric=None,
+                 fine_key_area=[0],
+                 min_iou=[0],
                  logger=None,
                  pklfile_prefix=None,
                  submission_prefix=None,

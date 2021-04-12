@@ -213,6 +213,9 @@ def main():
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
             print(f'\nloading results from {out_results}')
             outputs = mmcv.load(out_results)
+            eval_cfg = cfg.get('evaluation')
+            for key in eval_cfg:
+                eval_kwargs.update(dict(key=eval_cfg[key], **kwargs))
             out_eval = os.path.join(args.out, 'eval.pkl')
             if not args.noeval:
                 info = dataset.evaluate(outputs, **eval_kwargs)
