@@ -8,7 +8,7 @@ lr_config = dict(
     warmup='linear',
     warmup_iters=1000,
     warmup_ratio=1.0 / 1000,
-    step=[20, 23])
+    step=[15, 25])
 momentum_config = None
 # runtime settings
-total_epochs = 24
+total_epochs = 30
