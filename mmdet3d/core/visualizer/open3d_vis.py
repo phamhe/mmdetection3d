@@ -658,11 +658,11 @@ class Visualizer_bev(object):
                 out_str += '    %s\n'%b_type
                 if len(cls_infos[b_type]) == 0:
                     continue
-                # labels = np.stack(cls_infos[b_type], 0)
+                labels = np.stack(cls_infos[b_type], 0)
                 # inds = np.argsort(labels[:, 5])
                 for idx in range(labels.shape[0]):
                     out_str += '      %s %.2f %.2f %.3f %.3f'%(
-                    float(labels[idx, 0]), 
+                    labels[idx, 0], 
                     float(labels[idx, 5]), 
                     float(labels[idx, 6]),
                     float(labels[idx, 2]),

@@ -182,11 +182,9 @@ def get_deeproute_image_info(path,
 
 def add_difficulty_to_annos(info, 
                             key_area=[
-                                    [20, 40],
-                                    [10, 20]
+                                    [ -3, -10,  3, 10],
+                                    [-10, -20, 10, 20],
                                      ]):
-    min_height = [40, 25,
-                  25]  # minimum height for evaluated groundtruth/detections
     max_occlusion = [
         0, 1, 2
     ]  # maximum occlusion level of the groundtruth used for evaluation
@@ -200,6 +198,7 @@ def add_difficulty_to_annos(info,
     truncation = annos['truncated']
     hard_type = annos['hard_type']
     diff = []
+    annos['key_area'] = key_area
 
     key_area_nums = len(key_area[0])
     area_mask = np.zeros((len(dims),))
@@ -207,15 +206,11 @@ def add_difficulty_to_annos(info,
     i = 0
     #TODO remove hardcode keyarea
     for i in range(len(loc)):
-        if (abs(loc[i][0]) <= key_area[0][0] and 
-                abs(loc[i][1]) <= key_area[1][0]) or \
-                (abs(loc[i][0]) <= key_area[0][0] and 
-                abs(loc[i][1]) <= key_area[1][1]) or \
-                (abs(loc[i][0]) <= key_area[0][1] and
-                abs(loc[i][1]) <= key_area[1][0]):
+        if (abs(loc[i][0]) <= key_area[0][2] and 
+                abs(loc[i][1]) <= key_area[0][3]):
             continue
-        elif abs(loc[i][0]) <= key_area[0][1] or \
-                abs(loc[i][1]) <= key_area[1][1]:
+        elif abs(loc[i][0]) <= key_area[1][2] or \
+                abs(loc[i][1]) <= key_area[1][3]:
             area_mask[i] = 1
         else:
             area_mask[i] = 2

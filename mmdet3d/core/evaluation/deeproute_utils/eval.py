@@ -645,8 +645,8 @@ def do_eval(gt_annos,
             dt_annos,
             current_classes,
             min_overlaps,
-            eval_types=['bev', '3d']):
-    difficultys = [0, 1, 2]
+            eval_types=['bev', '3d'],
+            difficultys=[0, 1, 2]):
     mAP_bev = None
     if 'bev' in eval_types:
         ret, overlaps_bev = eval_class(gt_annos, dt_annos, current_classes, difficultys, 1,
@@ -703,7 +703,7 @@ def extra_eval(gt_annos,
                 overlaps, 
                 current_classes, 
                 min_overlaps=np.array([
-                              [0.5, 0.5, 0.7, 0.7, 0.7],
+                              [0.3, 0.3, 0.5, 0.5, 0.5],
                              ])):
 
     results = gather_results(gt_annos, dt_annos, overlaps, min_overlaps)
@@ -732,10 +732,6 @@ def deeproute_eval(gt_annos,
         assert 'bbox' in eval_types, 'must evaluate bbox when evaluating aos'
 
 
-    min_overlaps = []
-    for overlap in min_overlap:
-        min_overlaps.append(overlap)
-    min_overlaps = np.stack(min_overlaps, axis=0)  # [2, 3, 5]
     class_to_name = {
         0: 'PEDESTRIAN',
         1: 'CYCLIST',
@@ -743,6 +739,14 @@ def deeproute_eval(gt_annos,
         3: 'TRUCK',
         4: 'BUS',
     }
+    difficulty = ['key_area0', 'key_area1', 'key_area2']
+    min_overlaps = []
+    for i, overlap in enumerate(min_overlap):
+        min_overlaps.append([])
+        for diff in difficulty:
+            min_overlaps[i].append(overlap)
+        min_overlaps[i] = np.stack(min_overlaps[i], axis=0)  # [2, 3, 5]
+    min_overlaps = np.stack(min_overlaps, 0)
     name_to_class = {v: n for n, v in class_to_name.items()}
     if not isinstance(current_classes, (list, tuple)):
         current_classes = [current_classes]
@@ -773,7 +777,6 @@ def deeproute_eval(gt_annos,
     extra_res = extra_eval(gt_annos, dt_annos, overlaps_3d, current_classes, min_overlaps)
 
     ret_dict = {}
-    difficulty = ['key_area0', 'key_area1', 'key_area2']
     for j, curcls in enumerate(current_classes):
         # mAP threshold array: [num_minoverlap, metric, class]
         # mAP result: [num_class, num_diff, num_minoverlap]

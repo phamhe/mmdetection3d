@@ -558,8 +558,10 @@ class Anchor3DHead(nn.Module, AnchorTrainMixin):
 
         # visual debug
         # points = np.zeros((1, 3))
-        # dt_bboxes = mlvl_bboxes.cpu().detach().numpy() # dt delta
+        # dt_bboxes = torch.cat(mlvl_bboxes).cpu().detach().numpy() # dt delta
         # show_result(points, None, dt_bboxes, '', '01410')
+        # exit()
+
         final_bboxes = []
         final_scores = []
         final_labels = []

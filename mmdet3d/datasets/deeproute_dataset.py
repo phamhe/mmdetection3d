@@ -239,6 +239,8 @@ class DeeprouteDataset(Custom3DDataset):
             i for i, x in enumerate(ann_info['name']) if x != 'DontCare'
         ]
         for key in ann_info.keys():
+            if key == 'key_area':
+                continue
             img_filtered_annotations[key] = (
                 ann_info[key][relevant_annotation_indices])
         return img_filtered_annotations
@@ -321,10 +323,6 @@ class DeeprouteDataset(Custom3DDataset):
                     fx = fx[inds]
                     fy = fy[inds]
 
-                    # fx, inds = np.unique(fx, return_index=True)
-                    # fy = fy[inds]
-                    # fx.sort()
-                    # fx = fx[::-1]
                     if not fx.any() or fx.shape[0]<3:
                         continue
                     # li = interp1d(fx, fy, kind='quadratic')
@@ -337,9 +335,6 @@ class DeeprouteDataset(Custom3DDataset):
                     title='%s_iou%s_%s'%(cls_name[i_cls], 
                                                iou_name[i_cls][i_iou], 
                                                postfix)
-                    # plt.plot(fx_new, fy_new, 
-                    #          color=color[i_ka][i_iou],
-                    #          label=label) 
                     plt.plot(fx, fy, 
                              color=color[i_ka][i_iou],
                              label=label) 
@@ -457,64 +452,46 @@ class DeeprouteDataset(Custom3DDataset):
         self.show_badcase(results, out_dir, fresults, ffps_idx, ffns_idx)
 
     def show_badcase(self, results, out_dir, fresults, ffps_idx, ffns_idx):
-        for cls in range(len(ffps_idx)):
-            for diff in range(len(ffps_idx[cls])):
-                if not len(ffps_idx[cls][diff]):
-                    continue
-                fps_idx = ffps_idx[cls][diff][0]
-                fns_idx = ffns_idx[cls][diff][0]
-                for i in fps_idx:
-                    self.show(i, results, out_dir, fresults)
-                for i in fns_idx:
-                    self.show(i, results, out_dir, fresults)
+        for fps_idx in ffps_idx:
+            self.show(fps_idx, results, out_dir, fresults)
+        for fns_idx in ffns_idx:
+            self.show(fns_idx, results, out_dir, fresults)
 
     def get_final_index(self, fps, fns,
-                        classes=[2],
-                        difficulty=[0],
+                        classes=np.array([0, 1, 2, 3, 4]),
+                        difficulty=np.array([0]),
                         thresh=1.0):
         
-        ffps_idx = []
-        ffns_idx = []
-        for i in range(fps.shape[0]):
-            ffps_idx.append([])
-            ffns_idx.append([])
-            for j in range(fps.shape[2]):
-                ffps_idx[i].append([])
-                ffns_idx[i].append([])
+        fps_sum = np.sum(fps[classes, :, difficulty], 0)
+        fps_num = fps_sum.sum()
+        fns_sum = np.sum(fns[classes, :, difficulty], 0)
+        fns_num = fns_sum.sum()
 
-        for diff in difficulty:
-            for cls in classes:
-                fps_cls = fps[cls, :, diff]
-                fps_num = fps_cls.sum()
-                fns_cls = fns[cls, :, diff]
-                fns_num = fns_cls.sum()
+        fps_num_sel = int(fps_num*thresh)
+        fns_num_sel = int(fns_num*thresh)
 
-                fps_num_sel = int(fps_num*thresh)
-                fns_num_sel = int(fns_num*thresh)
+        args_fps = np.argsort(fps_sum)[::-1]
+        args_fns = np.argsort(fns_sum)[::-1]
 
-                args_fps = np.argsort(fps_cls)[::-1]
-                args_fns = np.argsort(fns_cls)[::-1]
+        fps_count = 0
+        fns_count = 0
+        fps_ptr = 0
+        fns_ptr = 0
+        for i_fps in args_fps:
+            fps_count += fps_sum[i_fps]
+            fps_ptr += 1
+            if fps_count >= fps_num_sel:
+                break
+        for i_fns in args_fns:
+            fns_count += fns_sum[i_fns]
+            fns_ptr += 1
+            if fns_count >= fns_num_sel:
+                break
 
-                fps_sum = 0
-                fns_sum = 0
-                fps_ptr = 0
-                fns_ptr = 0
-                for i_fps in args_fps:
-                    fps_sum += fps_cls[i_fps]
-                    fps_ptr += 1
-                    if fps_sum >= fps_num_sel:
-                        break
-                for i_fns in args_fns:
-                    fns_sum += fns_cls[i_fns]
-                    fns_ptr += 1
-                    if fns_sum >= fns_num_sel:
-                        break
+        fps_idx = args_fps[:fps_ptr+1]
+        fns_idx = args_fns[:fns_ptr+1]
 
-                fps_idx = args_fps[:fps_ptr+1]
-                ffps_idx[cls][diff].append(fps_idx)
-                fns_idx = args_fns[:fns_ptr+1]
-                ffns_idx[cls][diff].append(fns_idx)
-        return ffps_idx, ffns_idx
+        return fps_idx, fns_idx
 
     def get_thresh_inds(self, extra_res, curve_res_3d,
                       recall_thresh_rel=np.array([0.9, 0.92, 0.94, 0.96, 0.98, 1.0]),
@@ -552,11 +529,7 @@ class DeeprouteDataset(Custom3DDataset):
                           net_outputs,
                           class_names,
                           pklfile_prefix=None,
-                          submission_prefix=None,
-                          key_area=[
-                                    [20, 40],
-                                    [10, 20]
-                                    ]):
+                          submission_prefix=None):
         """Convert 3D detection results to kitti format for evaluation and test
         submission.
 
@@ -583,6 +556,7 @@ class DeeprouteDataset(Custom3DDataset):
             info = self.data_infos[idx]
             sample_idx = info['image']['image_idx']
             box_dict = self.convert_valid_bboxes(pred_dicts, info)
+            key_area = info['annos']['key_area']
             anno = {
                 'name': [],
                 'truncated': [],
@@ -607,15 +581,11 @@ class DeeprouteDataset(Custom3DDataset):
                     anno['location'].append(box[:3])
                     anno['rotation_y'].append(box[6])
                     anno['score'].append(score)
-                    if (abs(box[0]) <= key_area[0][0] and
-                            abs(box[1]) <= key_area[1][0]) or \
-                            (abs(box[0]) <= key_area[0][0] and 
-                            abs(box[1]) <= key_area[1][1]) or \
-                            (abs(box[0]) <= key_area[0][1] and
-                            abs(box[1]) <= key_area[1][0]):
+                    if (abs(box[0]) <= key_area[0][2] and
+                            abs(box[1]) <= key_area[0][3]):
                         anno['difficulty'].append(0)
-                    elif abs(box[0]) <= key_area[0][1] or \
-                            abs(box[1]) <= key_area[1][1]:
+                    elif abs(box[0]) <= key_area[1][2] or \
+                            abs(box[1]) <= key_area[1][3]:
                         anno['difficulty'].append(1)
                     else:
                         anno['difficulty'].append(2)
@@ -631,6 +601,7 @@ class DeeprouteDataset(Custom3DDataset):
                     'location': np.zeros([0, 3]),
                     'rotation_y': np.array([]),
                     'score': np.array([]),
+                    'difficulty':np.array([]),
                 }
                 annos.append(anno)
 
@@ -863,7 +834,7 @@ class DeeprouteDataset(Custom3DDataset):
             final_results.append(frame_res)
         return final_results, fps, fns
 
-    def show(self, i, results, out_dir, extra_res,
+    def show(self, i, results, out_dir, extra_res, difficulty=np.array([0]),
                 show=True):
         """Results visualization.
 
@@ -913,6 +884,9 @@ class DeeprouteDataset(Custom3DDataset):
             keys.append(key)
         bboxes_dict = {key:np.zeros((1, 7)) for key in keys}
         labels_dict = {key:np.zeros((1, 7)) for key in keys} # cls, cls_idx, score, ious, difficulty, location
+        pcd_limit_range = self.pcd_limit_range
+        x_max = -1
+        y_max = -1
 
         # res in frame
         for res in frame_extra:
@@ -923,6 +897,11 @@ class DeeprouteDataset(Custom3DDataset):
                         bbox3d = np.concatenate((info['location'],
                                                     info['dimensions'],
                                                     info['rotation_y']))
+                        if info['difficulty'] in difficulty:
+                            if abs(info['location'][0]) > x_max:
+                                x_max = abs(info['location'][0])
+                            if abs(info['location'][1]) > y_max:
+                                y_max = abs(info['location'][1])
                         bbox3d = bbox3d.reshape(1, 7)
                         label = np.concatenate((np.array([info['name']]),
                                                 np.array([self.cls_idx[info['name'].lower()]]),
@@ -937,6 +916,11 @@ class DeeprouteDataset(Custom3DDataset):
                 else:
                     if infos['fn_flag']:
                         continue
+                    if infos['difficulty'] in difficulty:
+                        if abs(infos['location'][0]) > x_max:
+                            x_max = abs(infos['location'][0])
+                        if abs(infos['location'][1]) > y_max:
+                            y_max = abs(infos['location'][1])
                     bbox3d = np.concatenate((infos['location'],
                                                 infos['dimensions'],
                                                 infos['rotation_y']))
@@ -954,6 +938,6 @@ class DeeprouteDataset(Custom3DDataset):
             allbboxes.append(bboxes_dict[key][1:])
             colors.append(color_map[key])
             labels.append(labels_dict[key][1:])
-        pcd_limit_range = [-40, -20, 0, 40, 20, 0]
+        pcd_limit_range = [-x_max, -y_max, 0, x_max, y_max, 0]
         show_results_bev(points, allbboxes, colors, keys, pcd_limit_range, out_dir, i, labels)
         show_results(points, allbboxes, colors, out_dir, file_name, show)
