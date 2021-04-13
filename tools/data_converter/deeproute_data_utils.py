@@ -181,10 +181,18 @@ def get_deeproute_image_info(path,
     return list(image_infos)
 
 def add_difficulty_to_annos(info, 
-                            key_area=[
-                                    [ -3, -10,  3, 10],
-                                    [-10, -20, 10, 20],
-                                     ]):
+                            key_area=np.array([
+                                    [[ -10, -5,  10, 5],
+                                    [-20, -10, 20, 10]],
+                                    [[ -10, -5,  10, 5],
+                                    [-20, -10, 20, 10]],
+                                    [[ -10, -3,  10, 3],
+                                    [-20, -5, 20, 5]],
+                                    [[ -20, -3,  20, 3],
+                                    [-40, -5, 40, 5]],
+                                    [[ -20, -3,  20, 3],
+                                    [-40, -5, 40, 5]],
+                                    ])):
     max_occlusion = [
         0, 1, 2
     ]  # maximum occlusion level of the groundtruth used for evaluation
@@ -205,12 +213,23 @@ def add_difficulty_to_annos(info,
 
     i = 0
     #TODO remove hardcode keyarea
+    cls_idx_map = {
+                    'PEDESTRIAN':0,
+                    'CYCLIST':1,
+                    'CAR':2,
+                    'TRUCK':3,
+                    'BUS':4,
+                }
     for i in range(len(loc)):
-        if (abs(loc[i][0]) <= key_area[0][2] and 
-                abs(loc[i][1]) <= key_area[0][3]):
+        if annos['name'][i] not in cls_idx_map:
+            cls_idx = 0
+        else:
+            cls_idx = cls_idx_map[annos['name'][i]]
+        if (abs(loc[i][0]) <= key_area[cls_idx, 0, 2] and 
+                abs(loc[i][1]) <= key_area[cls_idx, 0, 3]):
             continue
-        elif abs(loc[i][0]) <= key_area[1][2] or \
-                abs(loc[i][1]) <= key_area[1][3]:
+        elif abs(loc[i][0]) <= key_area[cls_idx, 1, 2] or \
+                abs(loc[i][1]) <= key_area[cls_idx, 1, 3]:
             area_mask[i] = 1
         else:
             area_mask[i] = 2

@@ -536,17 +536,17 @@ class Visualizer_bev(object):
                 out_dir,
                 prefix,
                 save=True,
-                scale_factor=[10, 10],
-                key_area = [[20, 40],
-                            [10, 20]]):
+                scale_factor=[80, 80],
+                padding=[4, 2],
+                grid_factor=2):
         super(Visualizer_bev, self).__init__()
         self.out_dir = out_dir
         self.prefix = prefix
         self.save = save
 
         self.frame_size = np.zeros((2,), dtype=np.int32)
-        self.frame_size[0] = int(points_range[4] - points_range[1]) + 40
-        self.frame_size[1] = int(points_range[3] - points_range[0]) + 40
+        self.frame_size[0] = int(points_range[4] - points_range[1]) + padding[1]
+        self.frame_size[1] = int(points_range[3] - points_range[0]) + padding[0]
         self.scale_factor = scale_factor
         self.frame_size[1] *= self.scale_factor[0]
         self.frame_size[0] *= self.scale_factor[1]
@@ -554,27 +554,27 @@ class Visualizer_bev(object):
         # prepare canvas
         self.canvas = np.zeros((self.frame_size[0], self.frame_size[1], 3), dtype='uint8')
         self.canvas.fill(255)
-        canvas_center_x = int(self.frame_size[1]/2+20)
-        canvas_center_y = int(self.frame_size[0]/2+20)
+        canvas_center_x = int(self.frame_size[1]/2)
+        canvas_center_y = int(self.frame_size[0]/2)
 
         cv2.circle(self.canvas,
                      (canvas_center_x,
                      canvas_center_y),
                      4, (0, 0, 0), -1)
-        x_axis = int(canvas_center_x/(10*self.scale_factor[1]))
-        y_axis = int(canvas_center_y/(10*self.scale_factor[0]))
-        for i in range(-x_axis, x_axis):
+        x_axis = int(canvas_center_x/(grid_factor*self.scale_factor[1]))
+        y_axis = int(canvas_center_y/(grid_factor*self.scale_factor[0]))
+        for i in range(-x_axis, x_axis+1):
             cv2.line(self.canvas, 
-                        (canvas_center_x+i*10*self.scale_factor[0], 
+                        (canvas_center_x+i*grid_factor*self.scale_factor[0], 
                         0), 
-                        (canvas_center_x+i*10*self.scale_factor[0], self.frame_size[0]),
+                        (canvas_center_x+i*grid_factor*self.scale_factor[0], self.frame_size[0]),
                         (0, 255, 255), 1)
-        for i in range(-y_axis, y_axis):
+        for i in range(-y_axis, y_axis+1):
             cv2.line(self.canvas, 
                         (0, 
-                        canvas_center_y+i*10*self.scale_factor[0]), 
+                        canvas_center_y+i*grid_factor*self.scale_factor[0]), 
                         (self.frame_size[1], 
-                        canvas_center_y+i*10*self.scale_factor[1]),
+                        canvas_center_y+i*grid_factor*self.scale_factor[1]),
                         (0, 255, 255), 1)
         class_name = ['PEDESTRIAN',
                         'CYCLIST',

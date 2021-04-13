@@ -448,7 +448,7 @@ class DeeprouteDataset(Custom3DDataset):
         res_str = self.fine_anly(curve_res_3d, show_inds)
         print(res_str)
         fresults, fps, fns = self.get_fine_res(results, extra_res)
-        ffps_idx, ffns_idx = self.get_final_index(fps, fns)
+        ffps_idx, ffns_idx = self.get_final_index(fps, fns, np.array([2]))
         self.show_badcase(results, out_dir, fresults, ffps_idx, ffns_idx)
 
     def show_badcase(self, results, out_dir, fresults, ffps_idx, ffns_idx):
@@ -574,6 +574,7 @@ class DeeprouteDataset(Custom3DDataset):
 
                 for box, score, label in zip(
                         box_preds, scores, label_preds):
+                    cls_idx = int(label)
                     anno['name'].append(class_names[int(label)])
                     anno['truncated'].append(0.0)
                     anno['occluded'].append(0)
@@ -581,11 +582,11 @@ class DeeprouteDataset(Custom3DDataset):
                     anno['location'].append(box[:3])
                     anno['rotation_y'].append(box[6])
                     anno['score'].append(score)
-                    if (abs(box[0]) <= key_area[0][2] and
-                            abs(box[1]) <= key_area[0][3]):
+                    if (abs(box[0]) <= key_area[cls_idx, 0, 2] and
+                            abs(box[1]) <= key_area[cls_idx, 0, 3]):
                         anno['difficulty'].append(0)
-                    elif abs(box[0]) <= key_area[1][2] or \
-                            abs(box[1]) <= key_area[1][3]:
+                    elif abs(box[0]) <= key_area[cls_idx, 1, 2] or \
+                            abs(box[1]) <= key_area[cls_idx, 1, 3]:
                         anno['difficulty'].append(1)
                     else:
                         anno['difficulty'].append(2)
