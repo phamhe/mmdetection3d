@@ -130,7 +130,7 @@ def get_deeproute_image_info(path,
                          velodyne=False,
                          image_ids=7000,
                          extend_matrix=True,
-                         num_worker=1,
+                         num_worker=8,
                          relative_path=True,
                          with_imageshape=True):
     """
@@ -238,7 +238,11 @@ def get_k(corners, shape):
         b[0, 0] = shape[1]/2
         a[1, 0] = corner[0]
         b[1, 0] = corner[1]
-        k = np.linalg.inv(a).dot(b)
+        if a[0, 0] == a[1, 0]:
+            k = np.zeros((3, 1))
+        else:
+            k = np.linalg.inv(a).dot(b)
+            k = np.concatenate((k, np.array([[1]])), 0)
         ks.append(k)
 
     # car vis
@@ -248,7 +252,11 @@ def get_k(corners, shape):
     b[0, 0] = corners[0, 1]
     a[1, 0] = corners[1, 0]
     b[1, 0] = corners[1, 1]
-    k = np.linalg.inv(a).dot(b)
+    if a[0, 0] == a[1, 0]:
+        k = np.zeros((3, 1))
+    else:
+        k = np.linalg.inv(a).dot(b)
+        k = np.concatenate((k, np.array([[1]])), 0)
     ks.append(k)
 
     ks = np.stack(ks, 0)
@@ -264,8 +272,9 @@ def trans_loc_2_area(loc, dims, shape, area_scale):
 def get_nearst_cars(loc, dims, rot, names, 
                         key_area=[-40, -10, 40, 10],
                         area_scale=[10, 10]):
-    # key_area=[-40, -40, 40, 40]
     car_names = ['CAR', 'TRUCK', 'BUS']
+    if len(loc) == 0:
+        return []
     loc = np.stack(loc, 0)
     dims = np.stack(dims, 0)
     area = np.zeros(((key_area[2]-key_area[0])*area_scale[0], 
@@ -286,11 +295,11 @@ def get_nearst_cars(loc, dims, rot, names,
     loc_grav = []
 
     # debug
-    canvas = np.zeros((area.shape[0], 
-                        area.shape[1], 3))
-    canvas.fill(255)
-    canvas_corners_list = []
-    colors = []
+    # canvas = np.zeros((area.shape[0], 
+    #                     area.shape[1], 3))
+    # canvas.fill(255)
+    # canvas_corners_list = []
+    # colors = []
 
     for idx in sort_idx:
         loc_idx = loc[idx]
@@ -305,12 +314,12 @@ def get_nearst_cars(loc, dims, rot, names,
             (abs(loc_idx[0]) > key_area[2] or 
                 abs(loc_idx[1]) > key_area[3]) :
             continue
-        if area[int(loc_area[0]), 
-                    int(loc_area[1])] :
-            colors.append((255, 0, 0))
-        else:
-            colors.append((0, 255, 0))
-        #     continue
+        # if area[int(loc_area[0]), 
+        #             int(loc_area[1])] :
+        #     colors.append((255, 0, 0))
+        # else:
+        #     colors.append((0, 255, 0))
+        # #     continue
 
         # get corners and transfer to area coord sys
         corners = get_corners(loc_area, 
@@ -319,7 +328,6 @@ def get_nearst_cars(loc, dims, rot, names,
                 np.array(area.shape)/2) ** 2
         dis = np.sum(dis, 1)
         dis_idxs = np.argsort(dis)
-        canvas_corners_list.append(corners)
         # get max angle corners
         max_ang_corners = get_max_ang_corners(corners, 
                                                 loc_area,
@@ -339,16 +347,29 @@ def get_nearst_cars(loc, dims, rot, names,
                 loc_j = loc_area
             else:
                 loc_j = loc_grav[-1][1]
-            div = [loc_j[0], loc_j[1]]
-            div = [-2 if (_ - area.shape[i_]/2) < 0 else 2
-                    for i_, _ in enumerate(div)]
-            area_flag = (loc_j[1]+div[1]) > ((loc_j[0]+div[0])*k[0] + k[1])
-            area_res = np.zeros_like(area_axis)
-            area_res[area_x, :] = np.arange(0, area.shape[1])
-            if area_flag:
-                inds = area_res > area_axis*k[0] + k[1]
+            if k[2] != 0:
+                div = [loc_j[0], loc_j[1]]
+                div = [-2 if (_ - area.shape[i_]/2) < 0 else 2
+                        for i_, _ in enumerate(div)]
+                area_flag = (loc_j[1]+div[1]) > ((loc_j[0]+div[0])*k[0] + k[1])
+                area_res = np.zeros_like(area_axis)
+                area_res[area_x, :] = np.arange(0, area.shape[1])
+                if area_flag:
+                    inds = area_res > area_axis*k[0] + k[1]
+                else:
+                    inds = area_res < area_axis*k[0] + k[1]
             else:
-                inds = area_res < area_axis*k[0] + k[1]
+                if i_k in [0, 1]:
+                    j_k = i_k
+                else:
+                    j_k = 0
+                area_flag = loc_j[0] > \
+                                max_ang_corners[j_k][0]
+                inds = np.zeros_like(area)
+                if area_flag:
+                    inds[int(max_ang_corners[j_k][0]):, :] = 1
+                else:
+                    inds[:int(max_ang_corners[j_k][0]), :] = 1
             inds_list.append(inds)
 
         inds_all = np.ones((area.shape[0], 
@@ -360,16 +381,8 @@ def get_nearst_cars(loc, dims, rot, names,
             inds_all = inds_all&inds
         area[inds_all] = 1
 
-        # add_area(canvas, area)
-        # for c_i, corners in enumerate(canvas_corners_list):
-        #     add_bbox(canvas, corners, colors[c_i])
-        # cv2.circle(canvas, (int(canvas.shape[0]/2), 
-        #                         int(canvas.shape[1]/2)),
-        #                         5, (0, 0, 0), -1)
-        # cv2.imshow('debug', canvas)
-        # cv2.waitKey()
+        #canvas_corners_list.append(corners)
 
-    colors = []
     grav_ptr = 0
     for idx in sort_idx:
         loc_idx = loc[idx]
@@ -391,19 +404,21 @@ def get_nearst_cars(loc, dims, rot, names,
                         [ 2, -2]])
         div[:, 0] += int(loc_j[0])
         div[:, 1] += int(loc_j[1])
-        if area[div[:, 0], div[:, 1]].all():
-            colors.append((255, 0, 0))
-        else:
-            colors.append((0, 255, 0))
         inds_res.append(idx)
-    cv2.circle(canvas, (int(canvas.shape[0]/2), 
-                            int(canvas.shape[1]/2)),
-                            5, (0, 0, 0), -1)
-    add_area(canvas, area)
-    for c_i, corners in enumerate(canvas_corners_list):
-        add_bbox(canvas, corners, colors[c_i])
-    cv2.imshow('debug', canvas)
-    cv2.waitKey()
+
+        # if area[div[:, 0], div[:, 1]].all():
+        #     colors.append((255, 0, 0))
+        # else:
+        #     colors.append((0, 255, 0))
+
+    # cv2.circle(canvas, (int(canvas.shape[0]/2), 
+    #                         int(canvas.shape[1]/2)),
+    #                         5, (0, 0, 0), -1)
+    # add_area(canvas, area)
+    # for c_i, corners in enumerate(canvas_corners_list):
+    #     add_bbox(canvas, corners, colors[c_i])
+    # cv2.imshow('debug', canvas)
+    # cv2.waitKey()
 
     return inds_res
 
@@ -472,15 +487,15 @@ def add_difficulty_to_annos(info,
             area_mask[i] = 0
         elif abs(loc[i][0]) > key_area[cls_idx, 1, 2] or \
                 abs(loc[i][1]) > key_area[cls_idx, 1, 3]:
-            area_mask[i] = 3
+            area_mask[i] = 2
 
-    # for i in range(len(loc)):
-    #     if area_mask[i]==0:
-    #         diff.append(0)
-    #     elif area_mask[i]==1:
-    #         diff.append(1)
-    #     else:
-    #         diff.append(2)
+    for i in range(len(loc)):
+        if area_mask[i]==0:
+            diff.append(0)
+        elif area_mask[i]==1:
+            diff.append(1)
+        else:
+            diff.append(2)
     annos['difficulty'] = np.array(diff, np.int32)
     return diff
 
