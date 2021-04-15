@@ -5,6 +5,8 @@ from os import path as osp
 from pathlib import Path
 from skimage import io
 import json
+import math
+import cv2
 
 def get_image_index_str(img_idx, use_prefix_id=False):
     return '{:05d}'.format(img_idx)
@@ -128,7 +130,7 @@ def get_deeproute_image_info(path,
                          velodyne=False,
                          image_ids=7000,
                          extend_matrix=True,
-                         num_worker=8,
+                         num_worker=1,
                          relative_path=True,
                          with_imageshape=True):
     """
@@ -180,18 +182,249 @@ def get_deeproute_image_info(path,
 
     return list(image_infos)
 
+def get_corners(loc, dims, rot):
+    center = loc[0:2]
+    size = dims[0:2]
+    if rot < 0:
+        rot += np.pi
+    yaw = rot
+   
+    # rot = np.asmatrix([[math.cos(yaw), -math.sin(yaw)],\
+    #                     [math.sin(yaw),  math.cos(yaw)]])
+    rot = np.asmatrix([[math.sin(yaw), -math.cos(yaw)],\
+                        [math.cos(yaw),  math.sin(yaw)]])
+    plain_pts = np.asmatrix([[0.5 * size[1], 0.5*size[0]],\
+                           [0.5 * size[1], -0.5*size[0]],\
+                           [-0.5 * size[1], -0.5*size[0]],\
+                           [-0.5 * size[1], 0.5*size[0]]])
+    tran_pts = np.asarray(rot * plain_pts.transpose())
+    tran_pts = tran_pts.transpose()
+    corners = np.arange(8).astype(np.float32).reshape(4, 2)
+    for j in range(4):
+        corners[j][0] = center[0] + tran_pts[j][0]
+        corners[j][1] = center[1] + tran_pts[j][1]
+    # corners = corners.astype(dtype=np.int32)
+
+    return corners
+
+def angle_cos(a, b):
+    return a.dot(b)/(np.linalg.norm(a) * np.linalg.norm(b))  
+
+def get_max_ang_corners(corners, 
+                        loc, shape):
+    O = shape/2
+    corners_o = corners[:] - O
+    loc_o = loc - O
+    angles = []
+    for corner in corners_o:
+        angle = angle_cos(corner, loc_o)
+        angles.append(angle)
+    idxs = np.argsort(angles)
+    idxs_res = idxs[:2]
+
+    # if max
+    res = corners_o[idxs_res]
+    if (res[0, 0] - loc_o[0])*(res[1, 0] - loc_o[0]) > 0:
+        idxs_res[1] = idxs[2]
+
+    return corners[idxs_res]
+
+def get_k(corners, shape):
+    ks = []
+    for corner in corners:
+        a = np.ones((2, 2))
+        b = np.zeros((2, 1))
+        a[0, 0] = shape[0]/2
+        b[0, 0] = shape[1]/2
+        a[1, 0] = corner[0]
+        b[1, 0] = corner[1]
+        k = np.linalg.inv(a).dot(b)
+        ks.append(k)
+
+    # car vis
+    a = np.ones((2, 2))
+    b = np.zeros((2, 1))
+    a[0, 0] = corners[0, 0]
+    b[0, 0] = corners[0, 1]
+    a[1, 0] = corners[1, 0]
+    b[1, 0] = corners[1, 1]
+    k = np.linalg.inv(a).dot(b)
+    ks.append(k)
+
+    ks = np.stack(ks, 0)
+    return ks
+
+def trans_loc_2_area(loc, dims, shape, area_scale):
+    loc_area = loc[0:2]*area_scale
+    loc_area -=  shape/2
+    loc_area = - loc_area
+    dims_area = dims[0:2] * area_scale[::-1]
+    return loc_area, dims_area
+
+def get_nearst_cars(loc, dims, rot, names, 
+                        key_area=[-40, -10, 40, 10],
+                        area_scale=[10, 10]):
+    key_area=[-40, -40, 40, 40]
+    car_names = ['CAR', 'TRUCK', 'BUS']
+    loc = np.stack(loc, 0)
+    dims = np.stack(dims, 0)
+    area = np.zeros(((key_area[2]-key_area[0])*area_scale[0], 
+                        (key_area[3]-key_area[1])*area_scale[1]), 
+                        dtype=np.bool)
+    inds_res = []
+    # sort and select target cars
+    loc_x = abs(loc[:, 0])
+    sort_idx = np.argsort(loc_x)
+    area_x = np.arange(area.shape[0])
+    area_x_val = np.arange(0, area.shape[0])
+    area_axis = np.zeros((area.shape[1], 
+                            area.shape[0]))
+    area_axis[area_x,:] = np.full((area.shape[0],), 
+                                    area_x_val)
+    area_axis = np.rot90(area_axis, -1)
+    loc_grav = []
+
+    # debug
+    canvas = np.zeros((area.shape[0], 
+                        area.shape[1], 3))
+    canvas.fill(255)
+    canvas_corners_list = []
+    colors = []
+
+    for idx in sort_idx:
+        loc_idx = loc[idx]
+        dims_idx = dims[idx]
+        rot_idx = rot[idx]
+        # real coord to area coord
+        loc_area, dims_area = trans_loc_2_area(loc_idx, 
+                                                dims_idx,
+                                                np.array(area.shape),
+                                                area_scale)
+        if names[idx] not in car_names or \
+            (abs(loc_idx[0]) > key_area[2] or 
+                abs(loc_idx[1]) > key_area[3]) :
+            continue
+        if area[int(loc_area[0]), 
+                    int(loc_area[1])] :
+            colors.append((255, 0, 0))
+        else:
+            colors.append((0, 255, 0))
+        #     continue
+
+        # get corners and transfer to area coord sys
+        corners = get_corners(loc_area, 
+                                dims_area, rot_idx)
+        dis = (corners - 
+                np.array(area.shape)/2) ** 2
+        dis = np.sum(dis, 1)
+        dis_idxs = np.argsort(dis)
+        canvas_corners_list.append(corners)
+        # get max angle corners
+        max_ang_corners = get_max_ang_corners(corners, 
+                                                loc_area,
+                                                np.array(area.shape))
+        loc_grav.append([])
+        loc_grav[-1].append(corners[dis_idxs[0]]) # naerest corner
+        loc_grav[-1].append(corners[dis_idxs[-1]]) # farest corner
+        loc_grav[-1].append(np.mean(max_ang_corners, 0))
+
+        # get k by corners
+        ks = get_k(max_ang_corners, 
+                    np.array(area.shape))
+        # get norm & points in area
+        inds_list = []
+        for i_k, k in enumerate(ks):
+            if i_k in [0, 1]:
+                loc_j = loc_area
+            else:
+                loc_j = loc_grav[-1][1]
+            div = [loc_j[0], loc_j[1]]
+            div = [-2 if (_ - area.shape[i_]/2) < 0 else 2
+                    for i_, _ in enumerate(div)]
+            area_flag = (loc_j[1]+div[1]) > ((loc_j[0]+div[0])*k[0] + k[1])
+            area_res = np.zeros_like(area_axis)
+            area_res[area_x, :] = np.arange(0, area.shape[1])
+            if area_flag:
+                inds = area_res > area_axis*k[0] + k[1]
+            else:
+                inds = area_res < area_axis*k[0] + k[1]
+            inds_list.append(inds)
+
+        inds_all = np.ones((area.shape[0], 
+                                area.shape[1]), 
+                                dtype=np.bool)
+        for inds in inds_list:
+            inds_all = inds_all&inds
+        for inds in inds_list:
+            inds_all = inds_all&inds
+        area[inds_all] = 1
+
+        # add_area(canvas, area)
+        # for c_i, corners in enumerate(canvas_corners_list):
+        #     add_bbox(canvas, corners, colors[c_i])
+        # cv2.circle(canvas, (int(canvas.shape[0]/2), 
+        #                         int(canvas.shape[1]/2)),
+        #                         5, (0, 0, 0), -1)
+        # cv2.imshow('debug', canvas)
+        # cv2.waitKey()
+
+    colors = []
+    grav_ptr = 0
+    for idx in sort_idx:
+        loc_idx = loc[idx]
+        dims_idx = dims[idx]
+        rot_idx = rot[idx]
+        if names[idx] not in car_names or \
+            (abs(loc_idx[0]) > key_area[2] or 
+                abs(loc_idx[1]) > key_area[3]) :
+            continue
+        loc_area, dims_area = trans_loc_2_area(loc_idx, 
+                                                  dims_idx, 
+                                                  np.array(area.shape), 
+                                                  area_scale)
+        loc_j = loc_grav[grav_ptr][-1]
+        grav_ptr += 1
+        div = np.array([[-2,  2],
+                        [-2, -2],
+                        [ 2,  2],
+                        [ 2, -2]])
+        div[:, 0] += int(loc_j[0])
+        div[:, 1] += int(loc_j[1])
+        if area[div[:, 0], div[:, 1]].all():
+            colors.append((255, 0, 0))
+        else:
+            colors.append((0, 255, 0))
+        inds_res.append(idx)
+    cv2.circle(canvas, (int(canvas.shape[0]/2), 
+                            int(canvas.shape[1]/2)),
+                            5, (0, 0, 0), -1)
+    add_area(canvas, area)
+    for c_i, corners in enumerate(canvas_corners_list):
+        add_bbox(canvas, corners, colors[c_i])
+    cv2.imshow('debug', canvas)
+    cv2.waitKey()
+
+    return inds_res
+
+def add_bbox(canvas, corners, color=(0, 255, 0)):
+    corners = corners.astype(dtype=np.int)[:, ::-1]
+    cv2.polylines(canvas, [corners], True, color, 2)
+
+def add_area(canvas, area):
+    canvas[area, :] = [0, 0, 75]
+
 def add_difficulty_to_annos(info, 
                             key_area=np.array([
                                     [[ -10, -5,  10, 5],
                                     [-20, -10, 20, 10]],
                                     [[ -10, -5,  10, 5],
                                     [-20, -10, 20, 10]],
-                                    [[ -10, -3,  10, 3],
-                                    [-20, -5, 20, 5]],
-                                    [[ -20, -3,  20, 3],
-                                    [-40, -5, 40, 5]],
-                                    [[ -20, -3,  20, 3],
-                                    [-40, -5, 40, 5]],
+                                    [[ -40, -10,  40, 10],
+                                    [-40, -10, 30, 10]],
+                                    [[ -40, -10,  40, 10],
+                                    [-40, -10, 30, 10]],
+                                    [[ -40, -10,  40, 10],
+                                    [-40, -10, 30, 10]],
                                     ])):
     max_occlusion = [
         0, 1, 2
@@ -200,8 +433,10 @@ def add_difficulty_to_annos(info,
         0.15, 0.3, 0.5
     ]  # maximum truncation level of the groundtruth used for evaluation
     annos = info['annos']
-    dims = annos['dimensions']  # lhw format
+    dims = annos['dimensions']  # wlh format
+    names = annos['name']
     loc = annos['location']
+    rot = annos['rotation_y']
     occlusion = annos['occluded']
     truncation = annos['truncated']
     hard_type = annos['hard_type']
@@ -209,10 +444,10 @@ def add_difficulty_to_annos(info,
     annos['key_area'] = key_area
 
     key_area_nums = len(key_area[0])
-    area_mask = np.zeros((len(dims),))
+    area_mask = np.ones((len(dims),))
 
     i = 0
-    #TODO remove hardcode keyarea
+    # TODO remove hardcode keyarea
     cls_idx_map = {
                     'PEDESTRIAN':0,
                     'CYCLIST':1,
@@ -220,27 +455,31 @@ def add_difficulty_to_annos(info,
                     'TRUCK':3,
                     'BUS':4,
                 }
+    # get key car key area0 case
+    inds = get_nearst_cars(loc, dims, 
+                            rot, names, 
+                            key_area[3][0])
+    area_mask[inds] = 0
     for i in range(len(loc)):
         if annos['name'][i] not in cls_idx_map:
             cls_idx = 0
         else:
             cls_idx = cls_idx_map[annos['name'][i]]
-        if (abs(loc[i][0]) <= key_area[cls_idx, 0, 2] and 
-                abs(loc[i][1]) <= key_area[cls_idx, 0, 3]):
-            continue
-        elif abs(loc[i][0]) <= key_area[cls_idx, 1, 2] or \
-                abs(loc[i][1]) <= key_area[cls_idx, 1, 3]:
-            area_mask[i] = 1
-        else:
-            area_mask[i] = 2
 
-    for i in range(len(loc)):
-        if area_mask[i]==0:
-            diff.append(0)
-        elif area_mask[i]==1:
-            diff.append(1)
-        else:
-            diff.append(2)
+        if abs(loc[i][0]) <= key_area[cls_idx, 0, 2] and \
+                abs(loc[i][1]) <= key_area[cls_idx, 0, 3] and cls_idx in [0, 1]:
+            area_mask[i] = 0
+        elif abs(loc[i][0]) > key_area[cls_idx, 1, 2] or \
+                abs(loc[i][1]) > key_area[cls_idx, 1, 3]:
+            area_mask[i] = 3
+
+    # for i in range(len(loc)):
+    #     if area_mask[i]==0:
+    #         diff.append(0)
+    #     elif area_mask[i]==1:
+    #         diff.append(1)
+    #     else:
+    #         diff.append(2)
     annos['difficulty'] = np.array(diff, np.int32)
     return diff
 
