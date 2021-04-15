@@ -189,8 +189,6 @@ def get_corners(loc, dims, rot):
         rot += np.pi
     yaw = rot
    
-    # rot = np.asmatrix([[math.cos(yaw), -math.sin(yaw)],\
-    #                     [math.sin(yaw),  math.cos(yaw)]])
     rot = np.asmatrix([[math.sin(yaw), -math.cos(yaw)],\
                         [math.cos(yaw),  math.sin(yaw)]])
     plain_pts = np.asmatrix([[0.5 * size[1], 0.5*size[0]],\
@@ -435,12 +433,13 @@ def add_difficulty_to_annos(info,
                                     [-20, -10, 20, 10]],
                                     [[ -10, -5,  10, 5],
                                     [-20, -10, 20, 10]],
+
                                     [[ -40, -10,  40, 10],
-                                    [-40, -10, 30, 10]],
+                                    [-40, -10, 40, 10]],
                                     [[ -40, -10,  40, 10],
-                                    [-40, -10, 30, 10]],
+                                    [-40, -10, 40, 10]],
                                     [[ -40, -10,  40, 10],
-                                    [-40, -10, 30, 10]],
+                                    [-40, -10, 40, 10]],
                                     ])):
     max_occlusion = [
         0, 1, 2
