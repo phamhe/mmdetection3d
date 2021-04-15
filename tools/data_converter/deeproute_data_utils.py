@@ -264,7 +264,7 @@ def trans_loc_2_area(loc, dims, shape, area_scale):
 def get_nearst_cars(loc, dims, rot, names, 
                         key_area=[-40, -10, 40, 10],
                         area_scale=[10, 10]):
-    key_area=[-40, -40, 40, 40]
+    # key_area=[-40, -40, 40, 40]
     car_names = ['CAR', 'TRUCK', 'BUS']
     loc = np.stack(loc, 0)
     dims = np.stack(dims, 0)
@@ -276,10 +276,11 @@ def get_nearst_cars(loc, dims, rot, names,
     loc_x = abs(loc[:, 0])
     sort_idx = np.argsort(loc_x)
     area_x = np.arange(area.shape[0])
+    area_y = np.arange(area.shape[1])
     area_x_val = np.arange(0, area.shape[0])
     area_axis = np.zeros((area.shape[1], 
                             area.shape[0]))
-    area_axis[area_x,:] = np.full((area.shape[0],), 
+    area_axis[area_y,:] = np.full((area.shape[0],), 
                                     area_x_val)
     area_axis = np.rot90(area_axis, -1)
     loc_grav = []
