@@ -454,13 +454,27 @@ class DeeprouteDataset(Custom3DDataset):
         print(res_str)
         fresults, fps, fns = self.get_fine_res(results, extra_res)
         ffps_idx, ffns_idx = self.get_final_index(fps, fns, np.array([2]))
-        self.show_badcase(results, out_dir, fresults, ffps_idx, ffns_idx)
+        self.show_badcase(results, out_dir, 
+                            fresults, 
+                            ffps_idx, ffns_idx,
+                            np.array([2]),
+                            np.array([0]))
 
-    def show_badcase(self, results, out_dir, fresults, ffps_idx, ffns_idx):
+    def show_badcase(self, results, out_dir, 
+                        fresults, 
+                        ffps_idx, ffns_idx,
+                        classes=np.array([0, 1, 2, 3, 4, 5]),
+                        difficulty=np.array([0, 1, 2])):
         for fps_idx in ffps_idx:
-            self.show(fps_idx, results, out_dir, fresults)
+            self.show(fps_idx, 
+                        results, out_dir, 
+                        fresults,
+                        classes, difficulty)
         for fns_idx in ffns_idx:
-            self.show(fns_idx, results, out_dir, fresults)
+            self.show(fns_idx, 
+                        results, out_dir, 
+                        fresults,
+                        classes, difficulty)
 
     def get_final_index(self, fps, fns,
                         classes=np.array([0, 1, 2, 3, 4]),
@@ -842,7 +856,9 @@ class DeeprouteDataset(Custom3DDataset):
             final_results.append(frame_res)
         return final_results, fps, fns
 
-    def show(self, i, results, out_dir, extra_res, difficulty=np.array([0]),
+    def show(self, i, results, out_dir, extra_res, 
+                classes=np.array([0, 1, 2, 3, 4]),
+                difficulty=np.array([0, 1, 2, 3]),
                 show=True):
         """Results visualization.
 
@@ -877,8 +893,10 @@ class DeeprouteDataset(Custom3DDataset):
         # frame in extra_res
         frame_extra = extra_res[i]
         allbboxes = []
+        allbboxes_bev = []
         colors = []
         labels = []
+        labels_bev = []
         keys = []
         for key in frame_extra[0].keys():
             if key not in [
@@ -893,8 +911,11 @@ class DeeprouteDataset(Custom3DDataset):
         bboxes_dict = {key:np.zeros((1, 7)) for key in keys}
         labels_dict = {key:np.zeros((1, 7)) for key in keys} # cls, cls_idx, score, ious, difficulty, location
         pcd_limit_range = self.pcd_limit_range
+        pcd_limit_range_bev = self.pcd_limit_range
         x_max = -1
         y_max = -1
+        x_max_bev = -1
+        y_max_bev = -1
 
         # res in frame
         for res in frame_extra:
@@ -946,6 +967,12 @@ class DeeprouteDataset(Custom3DDataset):
             allbboxes.append(bboxes_dict[key][1:])
             colors.append(color_map[key])
             labels.append(labels_dict[key][1:])
+            inds_bev = np.isin(labels_dict[key][1:, 1]
+                                .astype(dtype=np.int), classes) & \
+                        np.isin(labels_dict[key][1:, 4]
+                                .astype(dtype=np.int), difficulty)
+            allbboxes_bev.append(bboxes_dict[key][1:][inds_bev])
+            labels_bev.append(labels_dict[key][1:][inds_bev])
         pcd_limit_range = [-x_max, -y_max, 0, x_max, y_max, 0]
-        show_results_bev(points, allbboxes, colors, keys, pcd_limit_range, out_dir, i, labels)
+        show_results_bev(points, allbboxes_bev, colors, keys, pcd_limit_range, out_dir, i, labels_bev)
         show_results(points, allbboxes, colors, out_dir, file_name, show)
