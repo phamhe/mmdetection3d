@@ -472,6 +472,36 @@ def add_difficulty_to_annos(info,
     inds = get_nearst_cars(loc, dims, 
                             rot, names, 
                             key_area[3][0])
+    # get car key area 0
+    car_k = key_area[2, 0]
+    x_va = np.array([0, 0])
+    y_va = np.array([0, 0])
+    key_area0_car = car_k
+    for idx in inds:
+        div = loc[idx][:2]
+        div = [-1 if _<0 else 1
+                for _ in div]
+        cur_x = loc[idx][0]+div[0]*dims[idx][1]
+        if cur_x > x_va[1]:
+            x_va[1] = cur_x
+        if cur_x < x_va[0]:
+            x_va[0] = cur_x
+
+        cur_y = loc[idx][1]+div[1]*dims[idx][0]
+        if cur_y > y_va[1]:
+            y_va[1] = cur_y
+        if cur_y < y_va[0]:
+            y_va[0] = cur_y
+    if not (x_va.all() and y_va.all()):
+        inds_car = x_va == 0
+        x_va[inds_car] = car_k[0::2][inds_car]
+        inds_car = y_va == 0
+        y_va[inds_car] = car_k[1::2][inds_car]
+
+    key_area0_car = np.array([x_va[0], y_va[0], 
+                                x_va[1], y_va[1]])
+    annos['key_area0_car'] = key_area0_car
+        
     area_mask[inds] = 0
     for i in range(len(loc)):
         if annos['name'][i] not in cls_idx_map:

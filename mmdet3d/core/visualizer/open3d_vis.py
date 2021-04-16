@@ -536,7 +536,7 @@ class Visualizer_bev(object):
                 out_dir,
                 prefix,
                 save=True,
-                scale_factor=[40, 40],
+                scale_factor=[20, 20],
                 padding=[4, 2],
                 grid_factor=2):
         super(Visualizer_bev, self).__init__()

@@ -244,7 +244,7 @@ class DeeprouteDataset(Custom3DDataset):
             i for i, x in enumerate(ann_info['name']) if x != 'DontCare'
         ]
         for key in ann_info.keys():
-            if key == 'key_area':
+            if key in ['key_area', 'key_area0_car'] :
                 continue
             img_filtered_annotations[key] = (
                 ann_info[key][relevant_annotation_indices])
@@ -453,11 +453,11 @@ class DeeprouteDataset(Custom3DDataset):
         res_str = self.fine_anly(curve_res_3d, show_inds)
         print(res_str)
         fresults, fps, fns = self.get_fine_res(results, extra_res)
-        ffps_idx, ffns_idx = self.get_final_index(fps, fns, np.array([2]))
+        ffps_idx, ffns_idx = self.get_final_index(fps, fns, np.array([2, 3, 4]))
         self.show_badcase(results, out_dir, 
                             fresults, 
                             ffps_idx, ffns_idx,
-                            np.array([2]),
+                            np.array([2, 3, 4]),
                             np.array([0]))
 
     def show_badcase(self, results, out_dir, 
@@ -578,6 +578,7 @@ class DeeprouteDataset(Custom3DDataset):
             sample_idx = info['image']['image_idx']
             box_dict = self.convert_valid_bboxes(pred_dicts, info)
             key_area = info['annos']['key_area']
+            key_area0_car = info['annos']['key_area0_car']
             anno = {
                 'name': [],
                 'truncated': [],
@@ -603,14 +604,26 @@ class DeeprouteDataset(Custom3DDataset):
                     anno['location'].append(box[:3])
                     anno['rotation_y'].append(box[6])
                     anno['score'].append(score)
-                    if (abs(box[0]) <= key_area[cls_idx, 0, 2] and
-                            abs(box[1]) <= key_area[cls_idx, 0, 3]):
-                        anno['difficulty'].append(0)
-                    elif abs(box[0]) <= key_area[cls_idx, 1, 2] or \
-                            abs(box[1]) <= key_area[cls_idx, 1, 3]:
-                        anno['difficulty'].append(1)
+                    if cls_idx in [0, 1]:
+                        if (abs(box[0]) <= key_area[cls_idx, 0, 2] and
+                                abs(box[1]) <= key_area[cls_idx, 0, 3]):
+                            anno['difficulty'].append(0)
+                        elif abs(box[0]) <= key_area[cls_idx, 1, 2] or \
+                                abs(box[1]) <= key_area[cls_idx, 1, 3]:
+                            anno['difficulty'].append(1)
+                        else:
+                            anno['difficulty'].append(2)
                     else:
-                        anno['difficulty'].append(2)
+                        if (box[0] >= key_area0_car[0] and
+                               box[0] <= key_area0_car[2]) and \
+                               (box[1] >= key_area0_car[1] and
+                                    box[1] <= key_area0_car[3]):
+                            anno['difficulty'].append(0)
+                        elif abs(box[0]) <= key_area[cls_idx, 1, 2] or \
+                                abs(box[1]) <= key_area[cls_idx, 1, 3]:
+                            anno['difficulty'].append(1)
+                        else:
+                            anno['difficulty'].append(2)
 
                 anno = {k: np.stack(v) for k, v in anno.items()}
                 annos.append(anno)
@@ -910,10 +923,7 @@ class DeeprouteDataset(Custom3DDataset):
             keys.append(key)
         bboxes_dict = {key:np.zeros((1, 7)) for key in keys}
         labels_dict = {key:np.zeros((1, 7)) for key in keys} # cls, cls_idx, score, ious, difficulty, location
-        pcd_limit_range = self.pcd_limit_range
         pcd_limit_range_bev = self.pcd_limit_range
-        x_max = -1
-        y_max = -1
         x_max_bev = -1
         y_max_bev = -1
 
@@ -926,11 +936,6 @@ class DeeprouteDataset(Custom3DDataset):
                         bbox3d = np.concatenate((info['location'],
                                                     info['dimensions'],
                                                     info['rotation_y']))
-                        if info['difficulty'] in difficulty:
-                            if abs(info['location'][0]) > x_max:
-                                x_max = abs(info['location'][0])
-                            if abs(info['location'][1]) > y_max:
-                                y_max = abs(info['location'][1])
                         bbox3d = bbox3d.reshape(1, 7)
                         label = np.concatenate((np.array([info['name']]),
                                                 np.array([self.cls_idx[info['name'].lower()]]),
@@ -945,11 +950,6 @@ class DeeprouteDataset(Custom3DDataset):
                 else:
                     if infos['fn_flag']:
                         continue
-                    if infos['difficulty'] in difficulty:
-                        if abs(infos['location'][0]) > x_max:
-                            x_max = abs(infos['location'][0])
-                        if abs(infos['location'][1]) > y_max:
-                            y_max = abs(infos['location'][1])
                     bbox3d = np.concatenate((infos['location'],
                                                 infos['dimensions'],
                                                 infos['rotation_y']))
@@ -973,6 +973,19 @@ class DeeprouteDataset(Custom3DDataset):
                                 .astype(dtype=np.int), difficulty)
             allbboxes_bev.append(bboxes_dict[key][1:][inds_bev])
             labels_bev.append(labels_dict[key][1:][inds_bev])
-        pcd_limit_range = [-x_max, -y_max, 0, x_max, y_max, 0]
-        show_results_bev(points, allbboxes_bev, colors, keys, pcd_limit_range, out_dir, i, labels_bev)
-        show_results(points, allbboxes, colors, out_dir, file_name, show)
+            if inds_bev.any():
+                xs = bboxes_dict[key][1:, 0][inds_bev]
+                ys = bboxes_dict[key][1:, 1][inds_bev]
+                if abs(xs).max() > x_max_bev:
+                    x_max_bev = abs(xs).max()
+                if abs(ys).max() > y_max_bev:
+                    y_max_bev = abs(ys).max()
+        pcd_limit_range_bev = [-x_max_bev, -y_max_bev, 
+                                0, x_max_bev, y_max_bev, 0]
+        show_results_bev(points, allbboxes_bev, 
+                            colors, keys, 
+                            pcd_limit_range_bev, 
+                            out_dir, i, labels_bev)
+        show_results(points, allbboxes, 
+                        colors, out_dir, 
+                        file_name, show)
