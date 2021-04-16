@@ -312,12 +312,6 @@ def get_nearst_cars(loc, dims, rot, names,
             (abs(loc_idx[0]) > key_area[2] or 
                 abs(loc_idx[1]) > key_area[3]) :
             continue
-        # if area[int(loc_area[0]), 
-        #             int(loc_area[1])] :
-        #     colors.append((255, 0, 0))
-        # else:
-        #     colors.append((0, 255, 0))
-        # #     continue
 
         # get corners and transfer to area coord sys
         corners = get_corners(loc_area, 
@@ -379,7 +373,7 @@ def get_nearst_cars(loc, dims, rot, names,
             inds_all = inds_all&inds
         area[inds_all] = 1
 
-        #canvas_corners_list.append(corners)
+        # canvas_corners_list.append(corners)
 
     grav_ptr = 0
     for idx in sort_idx:
@@ -402,12 +396,16 @@ def get_nearst_cars(loc, dims, rot, names,
                         [ 2, -2]])
         div[:, 0] += int(loc_j[0])
         div[:, 1] += int(loc_j[1])
-        inds_res.append(idx)
-
-        # if area[div[:, 0], div[:, 1]].all():
-        #     colors.append((255, 0, 0))
-        # else:
+        div[:, 0] = np.clip(div[:, 0], 
+                                0, area.shape[0]-1)
+        div[:, 1] = np.clip(div[:, 1], 
+                                0, area.shape[1]-1)
+        if not area[div[:, 0], 
+                    div[:, 1]].all() :
+            inds_res.append(idx)
         #     colors.append((0, 255, 0))
+        # else:
+        #     colors.append((255, 0, 0))
 
     # cv2.circle(canvas, (int(canvas.shape[0]/2), 
     #                         int(canvas.shape[1]/2)),

@@ -171,9 +171,14 @@ class DeeprouteDataset(Custom3DDataset):
         # pts_path = data_info['point_cloud']['velodyne_path']
         # file_name = osp.split(pts_path)[-1].split('.')[0]
         # points = example['points'][0]._data.numpy()
+        # colors = []
+        # diffs = annos['difficulty']
+        # inds = diffs == 0
+        # gt_shows = gt_bboxes_3d.tensor.numpy()[inds]
+
         # show_result(points, 
-        #             gt_bboxes_3d.tensor.numpy(), 
-        #             gt_bboxes_3d.tensor.numpy(), 
+        #             gt_shows, 
+        #             None, 
         #             'model_0324_deeproute_pp', file_name, True)
         # exit()
 
@@ -513,6 +518,8 @@ class DeeprouteDataset(Custom3DDataset):
                 for idx, i_iou in enumerate(iou_thresh):
                     inds = recalls[i_cls][i_ka][i_iou] != 0
                     recalls_cls = recalls[i_cls][i_ka][i_iou][inds]
+                    if len(recalls_cls) == 0:
+                        continue
                     recall_thresh = [_*recalls_cls[-1] for _ in recall_thresh_rel]
                     idxs_list = np.zeros((recalls.shape[3],), dtype=np.bool)
                     thr_ptr = 0
