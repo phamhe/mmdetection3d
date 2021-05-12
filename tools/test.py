@@ -199,31 +199,6 @@ def main():
         if not args.noinference:
             print(f'\nwriting results to {out_results}')
             mmcv.dump(outputs, out_results)
-        kwargs = {} if args.eval_options is None else args.eval_options
-        if args.format_only:
-            dataset.format_results(outputs, **kwargs)
-        if args.eval:
-            eval_kwargs = cfg.get('evaluation', {}).copy()
-            # hard-code way to remove EvalHook args
-            for key in [
-                    'interval', 'tmpdir', 'start', 'gpu_collect', 'save_best',
-                    'rule'
-            ]:
-                eval_kwargs.pop(key, None)
-            eval_kwargs.update(dict(metric=args.eval, **kwargs))
-            print(f'\nloading results from {out_results}')
-            outputs = mmcv.load(out_results)
-            # eval_cfg = cfg.get('evaluation')
-            # for key in eval_cfg:
-            #     eval_kwargs.update(dict(key=eval_cfg[key], **kwargs))
-            out_eval = os.path.join(args.out, 'eval.pkl')
-            if not args.noeval:
-                info = dataset.evaluate(outputs, **eval_kwargs)
-                print(f'\nloading eval results from {out_eval}')
-                mmcv.dump(info, out_eval)
-            info = mmcv.load(out_eval)
-            dataset.online_eval(outputs, info, args.out)
-
 
 if __name__ == '__main__':
     main()

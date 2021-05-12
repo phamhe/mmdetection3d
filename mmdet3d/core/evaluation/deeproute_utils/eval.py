@@ -776,12 +776,16 @@ def deeproute_eval(gt_annos,
     extra_res = None
     extra_res = extra_eval(gt_annos, dt_annos, overlaps_3d, current_classes, min_overlaps)
 
-    ret_dict = {}
+    ret_dict = {
+                '3d':[],
+                'bev':[],
+                }
+
     for j, curcls in enumerate(current_classes):
-        # mAP threshold array: [num_minoverlap, metric, class]
-        # mAP result: [num_class, num_diff, num_minoverlap]
         curcls_name = class_to_name[curcls]
         for i in range(min_overlaps.shape[0]):
+            ret_dict['3d'].append(mAP3d[j, :, i])
+            ret_dict['bev'].append(mAPbev[j, :, i])
             # prepare results for print
             result += ('{} AP@{:.2f}, {:.2f}, {:.2f}:\n'.format(
                 curcls_name, *min_overlaps[i, :, j]))
@@ -808,13 +812,5 @@ def deeproute_eval(gt_annos,
         if mAP3d is not None:
             mAP3d = mAP3d.mean(axis=0)
             result += '3d   AP:{:.4f}, {:.4f}, {:.4f}\n'.format(*mAP3d[:, 0])
-
-        # prepare results for logger
-        for idx in range(3):
-            postfix = f'{difficulty[idx]}'
-            if mAP3d is not None:
-                ret_dict[f'Deeproute/Overall_3D_{postfix}'] = mAP3d[idx, 0]
-            if mAPbev is not None:
-                ret_dict[f'Deeproute/Overall_BEV_{postfix}'] = mAPbev[idx, 0]
 
     return result, ret_dict, curve_res_bev, curve_res_3d, extra_res

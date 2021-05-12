@@ -2,7 +2,8 @@ import mmcv
 import numpy as np
 import trimesh
 from os import path as osp
-
+import cv2
+import base64
 
 def _write_ply(points, out_filename):
     """Write points into ``ply`` format for meshlab visualization.
@@ -130,6 +131,49 @@ def show_results(points, allbboxes, colors, out_dir, filename, show=True):
             vis.add_bboxes(bbox3d=bboxes, bbox_color=colors[idx])
         vis.show()
 
+def show_results_html(points, allbboxes, 
+                        colors, key_area, 
+                        out_dir, file_name, show=True):
+    """Convert results into format that is directly readable for meshlab.
+
+    Args:
+        points (np.ndarray): Points.
+        gt_bboxes (np.ndarray): Ground truth boxes.
+        pred_bboxes (np.ndarray): Predicted boxes.
+        out_dir (str): Path of output directory
+        filename (str): Filename of the current frame.
+        show (bool): Visualize the results online.
+    """
+    from .open3d_vis import Visualizer_html
+
+    im_html = None
+    if show:
+        vis = Visualizer_html(points, key_area)
+        vis.add_points()
+        for idx, bboxes in enumerate(allbboxes):
+            vis.add_bboxes(bboxes, colors[idx])
+        im_html = vis.decode_img()
+    return im_html
+
+
+def project_pts_on_img(points,
+                       raw_img,
+                       lidar2img_rt,
+                       max_distance=70,
+                       thickness=-1):
+    """Project the 3D points cloud on 2D image.
+
+    Args:
+        points (numpy.array): 3D points cloud (x, y, z) to visualize.
+        raw_img (numpy.array): The numpy array of image.
+        lidar2img_rt (numpy.array, shape=[4, 4]): The projection matrix
+            according to the camera intrinsic parameters.
+        max_distance (float): the max distance of the points cloud.
+            Default: 70.
+        thickness (int, optional): The thickness of 2D points. Default: -1.
+    """
+        # vis.show()
+
 def show_result_bev(points, gt_bboxes, dt_bboxes, gt_labels=None, dt_labels=None, show=True):
     from .open3d_vis import Visualizer_bev
     if show:
@@ -141,8 +185,18 @@ def show_results_bev(points, allbboxes, colors, types, points_range, out_dir, pr
     vis = Visualizer_bev(points, points_range, out_dir, prefix, save)
     for idx, bboxes in enumerate(allbboxes):
         vis.add_bboxes(bboxes, colors[idx], labels[idx], types[idx])
+    if out_dir is None:
+        save = False
     if save:
         vis.context_infos()
     if show:
         vis.show()
-        
+
+def show_results_bev_html(points, allbboxes, colors, types, points_range, out_dir, prefix, labels=None, save=True, show=True):
+    from .open3d_vis import Visualizer_bev
+    vis = Visualizer_bev(points, points_range, out_dir, prefix, save)
+    for idx, bboxes in enumerate(allbboxes):
+        vis.add_bboxes(bboxes, colors[idx], labels[idx], types[idx])
+    img_html = vis.decode_img()
+    return img_html
+

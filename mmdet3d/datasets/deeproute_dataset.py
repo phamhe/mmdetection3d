@@ -6,15 +6,34 @@ import tempfile
 import torch
 from mmcv.utils import print_log
 from os import path as osp
+import io
+import base64
+import math
 
 from mmdet.datasets import DATASETS
-from ..core import show_result, show_results, show_results_bev
+from ..core import show_result, show_results, \
+    show_results_html, show_results_bev, show_results_bev_html
 from ..core.bbox import (Box3DMode, LiDARInstance3DBoxes, Coord3DMode)
 from .custom_3d import Custom3DDataset
 
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d, make_interp_spline
 
+def get_corners(center, size, yaw):
+    rot = np.asmatrix([[math.cos(yaw), -math.sin(yaw)],\
+                    [math.sin(yaw),  math.cos(yaw)]])
+    plain_pts = np.asmatrix([[0.5 * size[1], 0.5*size[0]],\
+                        [0.5 * size[1], -0.5*size[0]],\
+                        [-0.5 * size[1], -0.5*size[0]],\
+                        [-0.5 * size[1], 0.5*size[0]]])
+    tran_pts = np.asarray(rot * plain_pts.transpose());
+    tran_pts = tran_pts.transpose()
+    corners = np.arange(24).astype(np.float32).reshape(8, 3)
+    for i in range(8):
+        corners[i][0] = center[0] + tran_pts[i%4][1]
+        corners[i][1] = center[1] + tran_pts[i%4][0]
+        corners[i][2] = center[2] + (float(i >= 4) - 0.5) * size[2];
+    return corners
 
 @DATASETS.register_module()
 class DeeprouteDataset(Custom3DDataset):
@@ -78,8 +97,8 @@ class DeeprouteDataset(Custom3DDataset):
         self.pcd_limit_range = pcd_limit_range
         self.pts_prefix = pts_prefix
         self.cls_name = {
-                    0: 'ped',
-                    1: 'cyc',
+                    0: 'pedestrian',
+                    1: 'cyclist',
                     2: 'car', 3: 'truck', 4: 'bus',
                     }
         self.cls_idx = {
@@ -297,6 +316,7 @@ class DeeprouteDataset(Custom3DDataset):
 
         return result_files, tmp_dir
     def plot_extra(self, x, y, prefix, postfix, out_dir):
+        plot_data = []
         color = {
                 0:['red', 'darkred', 'lightcoral'],
                 1:['green', 'darkgreen', 'lightgreen'],
@@ -304,11 +324,6 @@ class DeeprouteDataset(Custom3DDataset):
                 # 3:['cyan', 'darkcyan', 'darkslategray'],
                 # 4:['']
                 }
-        cls_name = {
-                    0: 'ped',
-                    1: 'cyc',
-                    2: 'car', 3: 'truck', 4: 'bus',
-                    }
         iou_name = [
                     [0.3, 0.5],
                     [0.3, 0.5],
@@ -334,22 +349,34 @@ class DeeprouteDataset(Custom3DDataset):
                     # fx_new = np.linspace(fx[0], fx[-1], 200)
                     # fy_new = li(fx_new)
 
-                    label='%s_ka%s_iou%s_%s'%(cls_name[i_cls], 
-                                               i_ka, iou_name[i_cls][i_iou], 
+                    label='%s_key_area%s_%s'%(self.cls_name[i_cls], 
+                                               i_ka, 
                                                postfix)
-                    title='%s_iou%s_%s'%(cls_name[i_cls], 
-                                               iou_name[i_cls][i_iou], 
+                    title='%s_%s'%(self.cls_name[i_cls], 
                                                postfix)
                     plt.plot(fx, fy, 
                              color=color[i_ka][i_iou],
                              label=label) 
                     plt.xlabel(prefix)
-                    plt.ylabel('times')
+                    plt.ylabel(postfix)
                     plt.title(title)
                     plt.legend()
-            name ='%s_%s_%s'%(cls_name[i_cls], prefix, postfix)
+            name ='%s_%s_%s'%(self.cls_name[i_cls], prefix, postfix)
             plt.savefig(os.path.join(out_dir, name))
+            canvas = plt.get_current_fig_manager().canvas
+            canvas.draw()
+            buffer = io.BytesIO()
+            canvas.print_png(buffer)
+            data = buffer.getvalue()
+            # base64 decode
+            imb = base64.b64encode(data)
+            ims = imb.decode()
+            imd = "data:image/png;base64," + ims
+            plot_data.append(imd)
+            # plot_data.append(data)
+            buffer.close()
             plt.close()
+        return plot_data
                     
     def evaluate(self,
                  results,
@@ -389,14 +416,11 @@ class DeeprouteDataset(Custom3DDataset):
         if 'pts_bbox' in result_files:
             result_files_ = result_files['pts_bbox']
             eval_types = ['bev', '3d']
-            ap_result_str, ap_dict_, curve_res_bev, curve_res_3d, extra_res = deeproute_eval(
+            ap_result_str, ap_dict, curve_res_bev, curve_res_3d, extra_res = deeproute_eval(
                 gt_annos,
                 result_files_,
                 self.CLASSES,
                 eval_types=eval_types)
-
-            for ap_type, ap in ap_dict_.items():
-                ap_dict[f'{ap_type}'] = float('{:.4f}'.format(ap))
 
             print_log(
                 f'Results :\n' + ap_result_str, logger=logger)
@@ -404,113 +428,263 @@ class DeeprouteDataset(Custom3DDataset):
             tmp_dir.cleanup()
 
         info = [extra_res, curve_res_3d, curve_res_bev]
-        return info
+        return info, ap_result_str, ap_dict
+
+    def get_scores(self, curve_res_3d):
+        pr = curve_res_3d['precision']
+        rc = curve_res_3d['recall']
+        th = curve_res_3d['thresh']
+
+        roc = pr*rc
+        roc_max = np.argsort(roc, 3)
+        roc_max = roc_max[:, :, :, ::-1]
+        roc_max = roc_max[:, :, :, 0]
+        roc_max = roc_max.reshape((roc_max.shape[0],
+                                    roc_max.shape[1],
+                                    roc_max.shape[2],
+                                    1))
+
+        th_ = np.zeros_like(th)
+        th_ = th[:, :, :, 0]
+        th_ = th_.reshape((th.shape[0],
+                            th_.shape[1],
+                            th_.shape[2],
+                            1))
+        for i_cls in range(th.shape[0]):
+            for i_ka in range(th.shape[1]):
+                for i_iou in range(th.shape[2]):
+                    th_[i_cls, i_ka, i_iou, 0] = \
+                        th[i_cls, i_ka, 
+                            i_iou, roc_max[i_cls, i_ka,
+                                            i_iou, 0]]
+
+        return th_
 
     def coarl_anly(self, curve_res_3d, out_dir):
-        self.plot_extra(curve_res_3d['recall'], 
-                        curve_res_3d['fp'], 
-                        'recall', 'fp_3d', 
-                        out_dir)
-        self.plot_extra(curve_res_3d['recall'], 
-                        curve_res_3d['fn'], 
-                        'recall', 'fn_3d', 
-                        out_dir)
-        self.plot_extra(curve_res_3d['thresh'], 
-                        curve_res_3d['precision'], 
-                        'thresh', 'precision', 
-                        out_dir)
-        self.plot_extra(curve_res_3d['thresh'], 
-                        curve_res_3d['recall'], 
-                        'thresh', 'recall', 
-                        out_dir)
+        res = {}
+        # res['fp'] = self.plot_extra(curve_res_3d['recall'], 
+        #                     curve_res_3d['fp'], 
+        #                     'recall', 'fp', 
+        #                     out_dir)
+        # res['fn'] = self.plot_extra(curve_res_3d['recall'], 
+        #                     curve_res_3d['fn'], 
+        #                     'recall', 'fn', 
+        #                     out_dir)
+        res['precision'] = self.plot_extra(curve_res_3d['thresh'], 
+                                    curve_res_3d['precision'], 
+                                    'thresh', 'precision', 
+                                    out_dir)
+        res['recall'] = self.plot_extra(curve_res_3d['thresh'], 
+                                curve_res_3d['recall'], 
+                                'thresh', 'recall', 
+                                out_dir)
+        res['pr_rc'] = self.plot_extra(curve_res_3d['precision'], 
+                                curve_res_3d['recall'], 
+                                'precision', 'recall', 
+                                out_dir)
+        
+        return res
 
-    def fine_anly(self, curve_res_3d, show_inds):
-        res_str = ''
-        for cls in range(show_inds.shape[0]):
-            res_str += '-----------------------------\n'
-            res_str += '{} results\n'.format(self.cls_name[cls])
-            for ka in range(show_inds.shape[1]):
+    def fine_anly(self, curve_res_3d, show_inds, 
+                    fscores):
+        res_dict_list = []
+        for ka in range(show_inds.shape[1]):
+            res_dict = {}
+            for cls in range(show_inds.shape[0]):
+                cls_name = self.cls_name[cls]
+                res_dict[cls_name] = dict()
+                res_dict[cls_name].update({'fscore':'%.2f'%fscores[cls]})
+                out_name = ''
+                for i_s, s in enumerate(fscores):
+                    out_name += '%.2f'%s
+                    if i_s != len(fscores) -1 :
+                        out_name += '_'
+                res_dict[cls_name].update({'record_name':out_name})
                 for iou in range(show_inds.shape[2]):
-                    res_str += 'key_area{}, min_iou{}\n'.format(ka, iou)
                     keys = list(curve_res_3d.keys())
+                    res = {}
                     strs = ['{0:9} :'.format(key) for key in keys]
                     for i_str, str_ in enumerate(strs):
                         key = keys[i_str]
                         case = curve_res_3d[key][cls, ka, iou]
                         case = case[show_inds[cls, ka, iou]]
+                        res[key] = []
                         for ca in case:
-                            strs[i_str] += ' {0:7},'.format(str('%.4f'%ca))
-                    for str_ in strs:
-                        str_ += '\n'
-                        res_str += str_
-        return res_str
+                            if key in ['precision', 
+                                        'recall']:
+                                ca *= 100
+                                res[key].append(str('%.2f'%ca))
+                            elif key == 'thresh':
+                                res[key].append(str('%.2f'%ca))
+                            else:
+                                res[key].append(int(ca))
+                                
+                res_dict[cls_name].update(res)
+            res_dict_list.append(res_dict)
+        return res_dict_list
 
-    def online_eval(self, results, info, out_dir):
+    def curve(self, results, info, out_dir):
         extra_res = info[0]
         curve_res_3d = info[1]
-        self.coarl_anly(curve_res_3d, out_dir)
+        curve_res = self.coarl_anly(curve_res_3d, out_dir)
+        scores = self.get_scores(curve_res_3d)
+        scores = scores[:, 0, 0].reshape(-1)
         show_inds = self.get_thresh_inds(extra_res, curve_res_3d)
-        res_str = self.fine_anly(curve_res_3d, show_inds)
-        print(res_str)
-        fresults, fps, fns = self.get_fine_res(results, extra_res)
-        ffps_idx, ffns_idx = self.get_final_index(fps, fns, np.array([2, 3, 4]))
-        self.show_badcase(results, out_dir, 
-                            fresults, 
-                            ffps_idx, ffns_idx,
-                            np.array([2, 3, 4]),
-                            np.array([0]))
+        res_dict = self.fine_anly(curve_res_3d, show_inds,
+                                    scores)
 
-    def show_badcase(self, results, out_dir, 
-                        fresults, 
-                        ffps_idx, ffns_idx,
-                        classes=np.array([0, 1, 2, 3, 4, 5]),
-                        difficulty=np.array([0, 1, 2])):
-        for fps_idx in ffps_idx:
-            self.show(fps_idx, 
-                        results, out_dir, 
-                        fresults,
-                        classes, difficulty)
-        for fns_idx in ffns_idx:
-            self.show(fns_idx, 
-                        results, out_dir, 
-                        fresults,
-                        classes, difficulty)
+        #default online eval
+        online_res, fres = \
+            self.online_eval(results, info, 
+                                out_dir, scores)
+        return curve_res, res_dict, online_res, fres, scores
+
+    def online_eval(self, results, 
+            info, out_dir, 
+            online_score=np.array([0.31, 0.36, 0.75, 0.52, 0.77]), 
+            online_difficulty=np.array([0])):
+        extra_res = info[0]
+        curve_res_3d = info[1]
+        fresults, fps, fns = self.get_fine_res(results, extra_res, online_score)
+        res = self.get_final_index(fps, fns, difficulty=online_difficulty)
+        return res, fresults
+
+    def calc_passrate(self, fps, fns, classes, difficulty):
+        fps_pass = fps[classes, :, difficulty] == 0
+        fns_pass = fns[classes, :, difficulty] == 0
+
+        fps_pass = fps_pass.astype(dtype=np.int)
+        fns_pass = fns_pass.astype(dtype=np.int)
+        pass_inds = fps_pass & fns_pass
+
+        pass_num = np.sum(pass_inds, 1)
+        passrate = np.sum(pass_inds, 1).astype(np.float)/ \
+                        float(pass_inds.shape[1])
+        pass_all = np.ones((pass_inds.shape[1],), 
+                                dtype=np.bool)
+        for cls in classes:
+            pass_all = pass_all & \
+                        pass_inds[cls].astype(np.bool)
+        pass_num_all = np.sum(pass_all, 0)
+        passrate_all = np.sum(pass_all, 0).astype(np.float)/\
+                                float(pass_all.shape[0])
+        pass_all = pass_all.reshape((1, -1))
+        pass_all = np.concatenate((pass_all, 
+                    pass_inds.astype(np.bool)), 0)
+        return passrate, passrate_all, \
+                pass_num, pass_num_all, pass_all
+        
+    def package_fxs_results(self, 
+                                fxs_name, fxs,
+                                fxs_sum, fxs_idxs, pass_all,
+                                res, classes, difficulty):
+
+        for cls_i, cls_idx in enumerate(fxs_idxs[0]):
+            idx = int(fxs_idxs[1][cls_i])
+            idx_num = int(fxs[cls_idx, fxs_idxs[1][cls_i],
+                        difficulty])
+            # get all
+            res['ALL']['badcase_all'][idx]\
+                ['%s_num'%fxs_name] += idx_num
+            if not self.cls_name[cls_idx] in \
+                res['ALL']['badcase_all'][idx]['type']:
+                if res['ALL']['badcase_all'][idx]\
+                    ['type'] != '':
+                    res['ALL']['badcase_all'][idx]\
+                        ['type'] += '&%s'%(self.cls_name[cls_idx])
+                else:
+                    res['ALL']['badcase_all'][idx]\
+                        ['type'] += '%s'%(self.cls_name[cls_idx])
+            if not fxs_name in res['ALL']['badcase_all'][idx]['key']:
+                if res['ALL']['badcase_all'][idx]['key'] != '':
+                    res['ALL']['badcase_all'][idx]\
+                        ['key'] += '&%s'%fxs_name
+                else:
+                    res['ALL']['badcase_all'][idx]\
+                        ['key'] += '%s'%fxs_name
+                    
+            
+            # get specific class
+            res[self.cls_name[cls_idx]]['badcase_all'][idx]\
+                ['%s_num'%fxs_name] += idx_num
+            if not self.cls_name[cls_idx] in \
+                res[self.cls_name[cls_idx]]['badcase_all'][idx]['type']:
+                if res[self.cls_name[cls_idx]]['badcase_all'][idx]\
+                    ['type'] != '':
+                    res[self.cls_name[cls_idx]]['badcase_all'][idx]\
+                        ['type'] += '&%s'%(self.cls_name[cls_idx])
+                else:
+                    res[self.cls_name[cls_idx]]['badcase_all'][idx]\
+                        ['type'] += '%s'%(self.cls_name[cls_idx])
+            if not fxs_name in res[self.cls_name[cls_idx]]['badcase_all'][idx]['key']:
+                if res[self.cls_name[cls_idx]]['badcase_all'][idx]['key'] != '':
+                    res[self.cls_name[cls_idx]]['badcase_all'][idx]\
+                        ['key'] += '&%s'%fxs_name
+                else:
+                    res[self.cls_name[cls_idx]]['badcase_all'][idx]\
+                        ['key'] += '%s'%fxs_name
+
+        return res
 
     def get_final_index(self, fps, fns,
                         classes=np.array([0, 1, 2, 3, 4]),
                         difficulty=np.array([0]),
                         thresh=1.0):
         
-        fps_sum = np.sum(fps[classes, :, difficulty], 0)
-        fps_num = fps_sum.sum()
-        fns_sum = np.sum(fns[classes, :, difficulty], 0)
-        fns_num = fns_sum.sum()
+        fps_sum = np.sum(fps[classes, :, difficulty], 1)
+        fns_sum = np.sum(fns[classes, :, difficulty], 1)
 
-        fps_num_sel = int(fps_num*thresh)
-        fns_num_sel = int(fns_num*thresh)
+        fps_idxs = np.where(fps[classes, :, 
+                        difficulty] != 0)
+        fns_idxs = np.where(fns[classes, :, 
+                        difficulty] != 0)
 
-        args_fps = np.argsort(fps_sum)[::-1]
-        args_fns = np.argsort(fns_sum)[::-1]
+        passrate, passrate_all ,\
+            pass_num, pass_num_all, pass_all = \
+            self.calc_passrate(fps, fns, classes, difficulty)
 
-        fps_count = 0
-        fns_count = 0
-        fps_ptr = 0
-        fns_ptr = 0
-        for i_fps in args_fps:
-            fps_count += fps_sum[i_fps]
-            fps_ptr += 1
-            if fps_count >= fps_num_sel:
-                break
-        for i_fns in args_fns:
-            fns_count += fns_sum[i_fns]
-            fns_ptr += 1
-            if fns_count >= fns_num_sel:
-                break
+        res = {}
+        for cls in classes:
+            res[self.cls_name[cls]] = {
+                                     'pass_rate':'%.2f'%(passrate[cls]*100),
+                                     'pass_num':pass_num[cls],
+                                     'fail_num':fps.shape[1] - pass_num[cls],
+                                     'frame_num':fps.shape[1],
+                                     'badcase_all':dict(),
+                                     }
+        res['ALL'] = {
+                      'pass_rate':'%.2f'%(passrate_all*100),
+                      'pass_num':pass_num_all,
+                      'fail_num':fps.shape[1] - pass_num_all,
+                      'frame_num':fps.shape[1],
+                      'badcase_all':dict(),
+                     }
+        for idx, flag in enumerate(pass_all[0]):
+            if not flag:
+                res['ALL']['badcase_all'].update({idx:{
+                                        'fps_num':0,
+                                        'fns_num':0,
+                                        'type':'',
+                                        'key':'',
+                                        }})
+        for cls in classes:
+            for idx, flag in enumerate(pass_all[cls+1]):
+                if not flag:
+                    res[self.cls_name[cls]]['badcase_all'].update({idx:{
+                                            'fps_num':0,
+                                            'fns_num':0,
+                                            'type':'',
+                                            'key':'',
+                                            }})
+            
+        res = self.package_fxs_results('fps', fps, 
+                                    fps_sum, fps_idxs, pass_all,
+                                    res, classes, difficulty)
+        res = self.package_fxs_results('fns', fns, 
+                                    fns_sum, fns_idxs, pass_all,
+                                    res, classes, difficulty)
 
-        fps_idx = args_fps[:fps_ptr+1]
-        fns_idx = args_fns[:fns_ptr+1]
-
-        return fps_idx, fns_idx
+        return res
 
     def get_thresh_inds(self, extra_res, curve_res_3d,
                       recall_thresh_rel=np.array([0.9, 0.92, 0.94, 0.96, 0.98, 1.0]),
@@ -729,7 +903,7 @@ class DeeprouteDataset(Custom3DDataset):
             )
 
     def get_fine_res(self, results, extra_res, 
-                thresh=np.array([0.31, 0.36, 0.75, 0.52, 0.77]),
+                thresh,
                 iou=np.array([0.3, 0.3, 0.5, 0.5, 0.5])):
 
         # get fps && fns in score & iou
@@ -767,12 +941,14 @@ class DeeprouteDataset(Custom3DDataset):
                                     'rotation_y':np.array([gts['rotation_y'][idx]]),
                                     'difficulty':np.array([gts['difficulty'][idx]]),
                                     'fn_flag':False,
+                                    'key_area':gts['key_area'],
                                     },
                         'dts':[],
                         'fps':[],
                         'fns':[],
                         'others':[],
                         }
+                res['gt_annos']['key_area'][2][0] = gts['key_area0_car']
                 gt_name = gts['name'][idx].lower()
                 if not ious_flag:
                     for j in range(dts['name'].shape[0]):
@@ -783,21 +959,21 @@ class DeeprouteDataset(Custom3DDataset):
                              'location':dts['location'][j],
                              'rotation_y':np.array([dts['rotation_y'][j]]),
                              'score':np.array([dts['score'][j]]),
-                             'iou':np.array([0]),
-                             'difficulty':np.array([dts['difficulty'][j]])
+                             'iou':np.array([0.0]),
+                             'difficulty':np.array([dts['difficulty'][j]]),
                             }
                         if dts['score'][j] >= thresh[self.cls_idx[dt_name]]:
                             res['fps'].append(dt)
-                            fps[self.cls_idx[dt_name], i, dts['difficulty'][j]] += 1
+                            fps[self.cls_idx[dt_name], i, dts['difficulty'][j].astype(np.int)] += 1
                     fn = {
                          'name':gts['name'][idx],
                          'dimensions':gts['dimensions'][idx],
                          'location':gts['location'][idx],
                          'rotation_y':np.array([gts['rotation_y'][idx]]),
-                         'difficulty':np.array([gts['difficulty'][idx]])
+                         'difficulty':np.array([gts['difficulty'][idx]]),
                         }
                     res['fns'].append(fn)
-                    fns[self.cls_idx[gt_name], i, gts['difficulty'][idx]] += 1
+                    fns[self.cls_idx[gt_name], i, gts['difficulty'][idx].astype(np.int)] += 1
                     res['gt_annos']['fn_flag'] = True
                 else:
                     fn = {
@@ -820,7 +996,7 @@ class DeeprouteDataset(Custom3DDataset):
                                  'rotation_y':np.array([dts['rotation_y'][j]]),
                                  'score':np.array([dts['score'][j]]),
                                  'iou':np.array([max_ious[j]]),
-                                 'difficulty':np.array([dts['difficulty'][j]])
+                                 'difficulty':np.array([dts['difficulty'][j]]),
                                 }
                             if max_ious[j] >= iou[self.cls_idx[dt_name]] and \
                                 gts['name'][idx] == dts['name'][j] and \
@@ -828,7 +1004,7 @@ class DeeprouteDataset(Custom3DDataset):
                                 res['dts'].append(dt)
                             elif dts['score'][j] >= thresh[self.cls_idx[dt_name]]:
                                 res['fps'].append(dt)
-                                fps[self.cls_idx[dt_name], i, dts['difficulty'][j]] += 1
+                                fps[self.cls_idx[dt_name], i, dts['difficulty'][j].astype(np.int)] += 1
                             # has iou with gt
                             elif max_ious[j] > 0:
                                 res['others'].append(dt)
@@ -836,14 +1012,15 @@ class DeeprouteDataset(Custom3DDataset):
                                 inds_table.discard(j)
                         if len(res['dts']) == 0:
                             res['fns'].append(fn)
-                            fns[self.cls_idx[gt_name], i, gts['difficulty'][idx]] += 1
+                            fns[self.cls_idx[gt_name], i, gts['difficulty'][idx].astype(np.int)] += 1
                             res['gt_annos']['fn_flag'] = True
                     else:
                         res['fns'].append(fn)
                         res['gt_annos']['fn_flag'] = True
-                        fns[self.cls_idx[gt_name], i, gts['difficulty'][idx]] += 1
+                        fns[self.cls_idx[gt_name], i, gts['difficulty'][idx].astype(np.int)] += 1
                 frame_res.append(res)
             for j in inds_table:
+                dt_name = dts['name'][j].lower()
                 fp = {
                      'name':dts['name'][j],
                      'dimensions':dts['dimensions'][j],
@@ -851,7 +1028,7 @@ class DeeprouteDataset(Custom3DDataset):
                      'rotation_y':np.array([dts['rotation_y'][j]]),
                      'score':np.array([dts['score'][j]]),
                      'iou':np.array([max_ious[j]]),
-                     'difficulty':np.array([dts['difficulty'][j]])
+                     'difficulty':np.array([dts['difficulty'][j]]),
                     }
                 if dts['score'][j] >= thresh[self.cls_idx[dt_name]]:
                     if len(frame_res) > 0:
@@ -865,13 +1042,13 @@ class DeeprouteDataset(Custom3DDataset):
                                         'fns':[]
                                         }
                                         )
-                    fps[self.cls_idx[dt_name], i, dts['difficulty'][j]] += 1
+                    fps[self.cls_idx[dt_name], i, dts['difficulty'][j].astype(np.int)] += 1
             final_results.append(frame_res)
         return final_results, fps, fns
 
-    def show(self, i, results, out_dir, extra_res, 
-                classes=np.array([0, 1, 2, 3, 4]),
-                difficulty=np.array([0, 1, 2, 3]),
+    def show(self, i, results, extra_res, out_dir,
+                classes,
+                difficulty=np.array([0]),
                 show=True):
         """Results visualization.
 
@@ -926,6 +1103,7 @@ class DeeprouteDataset(Custom3DDataset):
         pcd_limit_range_bev = self.pcd_limit_range
         x_max_bev = -1
         y_max_bev = -1
+        key_area = np.zeros((5, 2, 4))
 
         # res in frame
         for res in frame_extra:
@@ -950,6 +1128,7 @@ class DeeprouteDataset(Custom3DDataset):
                 else:
                     if infos['fn_flag']:
                         continue
+                    key_area = infos['key_area']
                     bbox3d = np.concatenate((infos['location'],
                                                 infos['dimensions'],
                                                 infos['rotation_y']))
@@ -982,10 +1161,42 @@ class DeeprouteDataset(Custom3DDataset):
                     y_max_bev = abs(ys).max()
         pcd_limit_range_bev = [-x_max_bev, -y_max_bev, 
                                 0, x_max_bev, y_max_bev, 0]
-        show_results_bev(points, allbboxes_bev, 
-                            colors, keys, 
-                            pcd_limit_range_bev, 
-                            out_dir, i, labels_bev)
-        show_results(points, allbboxes, 
-                        colors, out_dir, 
-                        file_name, show)
+
+        bboxes_info = {
+                        'allbboxes':[],
+                        'colors':[],
+                        'key_areas':key_area,
+                        'key_area_colors':[
+                                            [255, 0, 255],
+                                            [238, 130, 238],
+                                            [160, 32, 240],
+                                            [147, 112, 219],
+                                        ]}
+
+        self.package_bboxes(allbboxes, colors, bboxes_info)
+        # img_3d = show_results_html(points, allbboxes, 
+        #             colors, key_area, out_dir, 
+        #             file_name, show)
+        # img_bev = show_results_bev_html(points, allbboxes_bev, 
+        #                     colors, keys, 
+        #                     pcd_limit_range_bev, 
+        #                     out_dir, i, labels_bev)
+        return points, bboxes_info
+
+    def package_bboxes(self, allbboxes, colors, bboxes_info):
+        for idx, bboxes in enumerate(allbboxes):
+            cornerses = []
+            for bbox in bboxes:
+                center = bbox[:3]
+                size = bbox[3:6]
+                center[-1] += size[-1]/2
+                yaw = bbox[6]
+                corners = get_corners(center, size, yaw)
+                corners = corners.tolist()
+                cornerses.append(corners)
+            bboxes_info['allbboxes'].append(cornerses)
+            color = [colors[idx][0],
+                        colors[idx][1],
+                        colors[idx][2]]
+            bboxes_info['colors'].append(color)
+        return bboxes_info

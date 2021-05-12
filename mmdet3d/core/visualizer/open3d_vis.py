@@ -2,10 +2,12 @@ import cv2
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import cv2
 import math
 
 import os
+import base64
 
 try:
     import open3d as o3d
@@ -184,16 +186,16 @@ def show_pts_boxes(points,
 def get_corners(center, size, yaw):
     rot = np.asmatrix([[math.cos(yaw), -math.sin(yaw)],\
                     [math.sin(yaw),  math.cos(yaw)]])
-    plain_pts = np.asmatrix([[0.5 * size[0], 0.5*size[1]],\
-                        [0.5 * size[0], -0.5*size[1]],\
-                        [-0.5 * size[0], -0.5*size[1]],\
-                        [-0.5 * size[0], 0.5*size[1]]])
+    plain_pts = np.asmatrix([[0.5 * size[1], 0.5*size[0]],\
+                        [0.5 * size[1], -0.5*size[0]],\
+                        [-0.5 * size[1], -0.5*size[0]],\
+                        [-0.5 * size[1], 0.5*size[0]]])
     tran_pts = np.asarray(rot * plain_pts.transpose());
     tran_pts = tran_pts.transpose()
     corners = np.arange(24).astype(np.float32).reshape(8, 3)
     for i in range(8):
-        corners[i][0] = center[0] + tran_pts[i%4][0]
-        corners[i][1] = center[1] + tran_pts[i%4][1]
+        corners[i][0] = center[0] + tran_pts[i%4][1]
+        corners[i][1] = center[1] + tran_pts[i%4][0]
         corners[i][2] = center[2] + (float(i >= 4) - 0.5) * size[2];
     return corners
 
@@ -538,7 +540,8 @@ class Visualizer_bev(object):
                 save=True,
                 scale_factor=[20, 20],
                 padding=[4, 2],
-                grid_factor=2):
+                grid_factor=2,
+                fix_width=1600):
         super(Visualizer_bev, self).__init__()
         self.out_dir = out_dir
         self.prefix = prefix
@@ -548,6 +551,10 @@ class Visualizer_bev(object):
         self.frame_size[0] = int(points_range[4] - points_range[1]) + padding[1]
         self.frame_size[1] = int(points_range[3] - points_range[0]) + padding[0]
         self.scale_factor = scale_factor
+
+        self.scale_factor[0] = int(fix_width/self.frame_size[1])
+        self.scale_factor[1] = self.scale_factor[0]
+
         self.frame_size[1] *= self.scale_factor[0]
         self.frame_size[0] *= self.scale_factor[1]
 
@@ -682,4 +689,204 @@ class Visualizer_bev(object):
         cv2.imshow('debug', self.canvas)
         cv2.waitKey()
 
+    def decode_img(self):
+        canvas_ = cv2.imencode('.jpg', self.canvas)[1]
+        canvas_ = base64.b64encode(canvas_)
+        canvas_ = canvas_.decode()
+        canvas_ = "data:image/png;base64," + canvas_
+        return canvas_
+        
 
+
+class Visualizer_html(object):
+    def __init__(self, points,
+                    key_area,
+                    cam_cfg=None):
+        super(Visualizer_html, self).__init__()
+        self.points = points
+        self.points_cam = None
+        if cam_cfg is not None:
+            self.cam_cfg = cam_cfg
+        else:
+            self.cam_cfg = {
+                        'width':1920,
+                        'height':1080,
+                        'x_rad':-0.8, # + is shunshizhen
+                        'y_rad':-np.pi/2,
+                        'z_rad':0,
+                        'trans':np.array([0, 0, 40])
+                    }
+        self.lidar_2_cam = np.array(
+                                [[0, -1, 0, 0],
+                                [0, 0, -1, 0],
+                                [1, 0, 0, 0],
+                                [0, 0, 0, 1]]
+                            ).astype(np.float32)
+        cam_r_x  = np.array(
+                           [[1, 0, 0],
+                           [0, 
+                               np.cos(self.cam_cfg['x_rad']), 
+                               np.sin(self.cam_cfg['x_rad'])],
+                           [0, 
+                               -np.sin(self.cam_cfg['x_rad']), 
+                               np.cos(self.cam_cfg['x_rad'])]],
+                           )
+        cam_r_y  = np.array(
+                           [[np.cos(self.cam_cfg['y_rad']), 0,
+                               -np.sin(self.cam_cfg['y_rad'])],
+                           [0, 1, 0],
+                           [np.sin(self.cam_cfg['y_rad']), 0,
+                               np.cos(self.cam_cfg['y_rad'])]]
+                           )
+        cam_r_z  = np.array(
+                           [[np.cos(self.cam_cfg['z_rad']),
+                               -np.sin(self.cam_cfg['z_rad']), 0],
+                             [np.sin(self.cam_cfg['z_rad']),
+                               np.cos(self.cam_cfg['z_rad']), 0],
+                             [0, 0, 1]]
+                           )
+        mat_r = cam_r_z @ cam_r_x @ cam_r_y
+        self.cam_ex = np.concatenate((mat_r, 
+                                        self.cam_cfg['trans'].reshape(3, 1)), 1)
+        self.cam_ex = np.concatenate((self.cam_ex, 
+                                        np.array([0, 0, 0, 1])\
+                                            .reshape(1, 4)), 0)
+
+        self.cam_in = np.array(
+                            [[500, 0, 960, 0],
+                            [0, 500, 540, 0],
+                            [0, 0, 1, 0]]
+                        ).astype(np.float32)
+        self.mat_proj = self.cam_in @ self.cam_ex @ \
+                            self.lidar_2_cam
+
+        self.canvas = np.zeros((self.cam_cfg['height'], 
+                                    self.cam_cfg['width'], 3), 
+                                    dtype='uint8')
+        self.canvas.fill(255)
+        # draw key area
+        self.key_area_mask(key_area)
+
+    def key_area_mask(self, key_area):
+        color_map = [
+                        [
+                            (255, 0, 255),
+                            (238, 130, 238)
+                        ],
+                        [
+                            (240, 32, 160),
+                            (219, 112, 147)
+                        ],
+                    ]
+        key_area_points = np.zeros((2, 2, 4, 4))
+        key_area_points[:, :, :, 3] = 1
+        for i in range(2):
+            for j in range(2):
+                key_area_points[i, j, 0, :2] = \
+                    key_area[2*i, j, :2]
+                key_area_points[i, j, 1, :2] = \
+                    key_area[2*i, j, ::3]
+                key_area_points[i, j, 2, :2] = \
+                    key_area[2*i, j, 2:]
+                key_area_points[i, j, 3, 0] = \
+                    key_area[2*i, j, 2]
+                key_area_points[i, j, 3, 1] = \
+                    key_area[2*i, j, 1]
+        key_area_cam = self.mat_proj @ key_area_points.reshape((-1, 4, 1))
+        key_area_cam = key_area_cam.reshape((key_area_points.shape[0],
+                                        key_area_points.shape[1],
+                                        key_area_points.shape[2], -1))
+        factor = key_area_cam[:, :, :, 2]\
+                    .reshape(
+                        (key_area_cam.shape[0],
+                        key_area_cam.shape[1],
+                        key_area_cam.shape[2], 1))
+        factor = np.concatenate((factor, factor), 3)
+        key_area_cam[:, :, :, :2] /= factor
+        key_area_cam = key_area_cam[:, :, :, :2]
+        mask = np.zeros_like(self.canvas)
+        mask.fill(255)
+        for i in range(key_area_cam.shape[0]-1,
+                        -1, -1):
+            for j in range(key_area_cam.shape[1]-1, 
+                            -1, -1):
+                corners = key_area_cam[i, j]
+                corners = corners.reshape((-1, 1, 2))
+                corners = corners.astype(np.int)
+                cv2.polylines(mask, [corners],
+                                True, color_map[i][j], 1)
+                cv2.fillPoly(mask, [corners],
+                                color_map[i][j])
+        alpha = 0.7
+        beta = 0.3
+        gamma = 0
+        self.canvas = cv2.addWeighted(self.canvas, 
+                           alpha, mask, 
+                           beta, gamma)
+
+    def add_points(self):
+         pts_num = self.points.shape[0]
+         padding = np.ones((pts_num, 1), 
+                            dtype=self.points.dtype)
+         self.points = self.points[:, :3]
+         self.points = np.concatenate((self.points, 
+                                        padding), 1)
+
+
+         points_ = self.points.reshape((-1, 4, 1))
+         self.points_cam = self.mat_proj @ points_
+         self.points_cam = self.points_cam.reshape((-1, 3))
+         # temporoal debug code
+         inds = self.points_cam[:, 2] > 0
+         self.points_cam = self.points_cam[inds]
+
+         factor = self.points_cam[:, 2].reshape((-1, 1))
+         factor = np.concatenate((factor, factor), 1)
+         self.points_cam[:, :2] /= factor
+         self.points_cam = self.points_cam[:, :2]
+         
+         for point in self.points_cam:
+            cv2.circle(self.canvas, (int(point[0]),
+                                        int(point[1])),
+                                        1, (220, 220, 220), -1)
+    def add_bboxes(self, bboxes, color):
+        new_color = (color[2], color[1], color[0])
+        for bbox in bboxes:
+            center = bbox[0:3]
+            size = bbox[3:6]
+            yaw = bbox[6]
+            corners = get_corners(center, size, yaw)
+
+            corners = np.concatenate((corners, 
+                                        np.ones((
+                                            corners.shape[0], 
+                                            1))), 1)
+            corners = self.mat_proj @ corners.reshape((-1, 4, 1))[:]
+            corners = corners.reshape((-1, 3))
+            factor = corners[:, 2].reshape((-1, 1))
+            factor = np.concatenate((factor, factor), 1)
+            corners[:, :2] /= factor
+            corners = corners[:, :2]
+            corners[:, 0] = np.clip(corners[:, 0], 0, self.canvas.shape[1])
+            corners[:, 1] = np.clip(corners[:, 1], 0, self.canvas.shape[0])
+            cv2.polylines(self.canvas, [corners[0:4].astype(np.int)], 
+                                            True, new_color, 1)
+            cv2.polylines(self.canvas, [corners[4:].astype(np.int)], 
+                                            True, new_color, 1)
+            for i in range(4):
+                cv2.line(self.canvas, (int(corners[i][0]),
+                                        int(corners[i][1])),
+                                        (int(corners[i+4][0]),
+                                        int(corners[i+4][1])),
+                                        new_color, 1)
+
+    def show(self):
+        cv2.imshow('debug', self.canvas)
+        cv2.waitKey()
+
+    def decode_img(self):
+        canvas_ = cv2.imencode('.jpg', self.canvas)[1]
+        canvas_ = base64.b64encode(canvas_)
+        canvas_ = canvas_.decode()
+        canvas_ = "data:image/png;base64," + canvas_
+        return canvas_
