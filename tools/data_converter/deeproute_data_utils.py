@@ -179,6 +179,10 @@ def get_deeproute_image_info(path,
 
     with futures.ThreadPoolExecutor(num_worker) as executor:
         image_infos = executor.map(map_func, image_ids)
+    # image_infos = []
+    # for image_id in image_ids:
+    #     image_info = map_func(image_id)
+    #     image_infos.append(image_info)
 
     return list(image_infos)
 
@@ -267,6 +271,25 @@ def trans_loc_2_area(loc, dims, shape, area_scale):
     dims_area = dims[0:2] * area_scale[::-1]
     return loc_area, dims_area
 
+def sort_inds(inds, loc):
+    inds = np.array(inds)
+    loc_ids = loc[inds]
+
+    inds_pos = inds[loc_ids[:, 0]>0]
+    loc_x_pos = loc_ids[loc_ids[:, 0]>0]
+
+    inds_neg = inds[loc_ids[:, 0]<=0]
+    loc_x_neg = loc_ids[loc_ids[:, 0]<=0]
+
+    sorted_inds_x_pos = np.argsort(loc_x_pos[:, 1])[::-1]
+    sorted_inds_x_neg = np.argsort(loc_x_neg[:, 1])
+    inds_pos = inds_pos[sorted_inds_x_pos]
+    inds_neg = inds_neg[sorted_inds_x_neg]
+    inds_res = np.concatenate((inds_pos, inds_neg), 0)
+
+    return inds_res
+    
+
 def get_nearst_cars(loc, dims, rot, names, 
                         key_area=[-40, -10, 40, 10],
                         area_scale=[10, 10]):
@@ -277,7 +300,7 @@ def get_nearst_cars(loc, dims, rot, names,
     dims = np.stack(dims, 0)
     area = np.zeros(((key_area[2]-key_area[0])*area_scale[0], 
                         (key_area[3]-key_area[1])*area_scale[1]), 
-                        dtype=np.bool)
+                        dtype=np.uint8)
     inds_res = []
     # sort and select target cars
     loc_x = abs(loc[:, 0])
@@ -403,6 +426,13 @@ def get_nearst_cars(loc, dims, rot, names,
         if not area[div[:, 0], 
                     div[:, 1]].all() :
             inds_res.append(idx)
+            # recover area in car
+            area_ = area.reshape((area.shape[0], area.shape[1], 1))
+            area_ = np.concatenate((area_, area_, area_), 2)
+            corners = get_corners(loc_area, 
+                                    dims_area, rot_idx)
+            cv2.fillPoly(area_, [corners.astype(dtype=np.int)[:, ::-1]], (0, 0, 0))
+            area = area_[..., 0]
         #     colors.append((0, 255, 0))
         # else:
         #     colors.append((255, 0, 0))
@@ -415,15 +445,20 @@ def get_nearst_cars(loc, dims, rot, names,
     #     add_bbox(canvas, corners, colors[c_i])
     # cv2.imshow('debug', canvas)
     # cv2.waitKey()
+    
+    # sort idx by x and y
+    # if len(inds_res) > 0 :
+    #     inds_res = sort_inds(inds_res, loc)
 
-    return inds_res
+    # where area is 0 is key area 0
+    return inds_res, area.astype(np.bool)
 
 def add_bbox(canvas, corners, color=(0, 255, 0)):
     corners = corners.astype(dtype=np.int)[:, ::-1]
     cv2.polylines(canvas, [corners], True, color, 2)
 
 def add_area(canvas, area):
-    canvas[area, :] = [0, 0, 75]
+    canvas[area.astype(np.bool), :] = [0, 0, 75]
 
 def add_difficulty_to_annos(info, 
                             key_area=np.array([
@@ -469,7 +504,7 @@ def add_difficulty_to_annos(info,
                     'BUS':4,
                 }
     # get key car key area0 case
-    inds = get_nearst_cars(loc, dims, 
+    inds, area = get_nearst_cars(loc, dims, 
                             rot, names, 
                             key_area[3][0])
     # get car key area 0
@@ -477,6 +512,8 @@ def add_difficulty_to_annos(info,
     x_va = np.array([0, 0])
     y_va = np.array([0, 0])
     key_area0_car = car_k
+
+    # get car key area 0
     for idx in inds:
         div = loc[idx][:2]
         div = [-1 if _<0 else 1
@@ -501,6 +538,7 @@ def add_difficulty_to_annos(info,
     key_area0_car = np.array([x_va[0], y_va[0], 
                                 x_va[1], y_va[1]])
     annos['key_area0_car'] = key_area0_car
+    annos['key_area0_mask'] = area
         
     area_mask[inds] = 0
     for i in range(len(loc)):
